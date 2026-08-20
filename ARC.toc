@@ -1,0 +1,9 @@
+## Interface: 50400
+## Title: ARC |cff33ff99(Advanced Ready Check)|r
+## Notes: Enhanced ready-check overview: role, spec, flask/food, raid buffs, item level and durability for your group/raid.
+## Author: Interacti0n
+## Version: 1.0.0
+## SavedVariables: ARC_DB
+## DefaultState: enabled
+
+ARC.lua
