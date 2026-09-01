@@ -1,3 +1,11 @@
+v1.4.0 CHANGES
+  - Reworked optional ElvUI integration for the MoP-era ElvUI 2.76 API.
+  - ARC now uses ElvUI's transparent frame template, media colors and fonts,
+    styled header, close/announce buttons, row highlights and icon borders.
+  - Added ElvUI as an optional TOC dependency for reliable load order while
+    preserving the standalone ARC skin when ElvUI is disabled or unavailable.
+  - Player names now show `(off)` or `(dead)` alongside the matching row color.
+
 v1.3.3 CHANGES
   - Fixed a Lua error in flask/food row tooltips caused by consumable lookup
     tables becoming module-local during the file split; aura names now come

@@ -118,6 +118,7 @@ local function CreateHeader(parent)
     local header = CreateFrame("Frame", nil, parent)
     header:SetPoint("TOPLEFT", 8, -6)
     header:SetSize(FRAME_WIDTH - 16, HEADER_HEIGHT)
+    header.labels = {}
 
     for _, col in ipairs(COLS) do
         if col.label ~= "" then
@@ -126,6 +127,7 @@ local function CreateHeader(parent)
             fs:SetWidth(col.w)
             fs:SetJustifyH("CENTER")
             fs:SetText(col.label)
+            header.labels[#header.labels + 1] = fs
         end
         if CATEGORY_TITLES[col.key] then
             AttachHeaderCategoryTooltip(header, col)
@@ -138,6 +140,7 @@ local function CreateHeader(parent)
     line:SetPoint("BOTTOMLEFT", 0, -2)
     line:SetPoint("BOTTOMRIGHT", 0, -2)
     line:SetHeight(1)
+    header.line = line
 
     return header
 end
@@ -153,11 +156,16 @@ local function SetRoleIcon(tex, role)
         end)
         if not ok then
             tex:SetTexture(nil)
+            tex:Hide()
+            if tex.backdrop then tex.backdrop:Hide() end
+            return
         end
         tex:Show()
+        if tex.backdrop then tex.backdrop:Show() end
     else
         tex:SetTexture(nil)
         tex:Hide()
+        if tex.backdrop then tex.backdrop:Hide() end
     end
 end
 
@@ -166,21 +174,26 @@ local function SetReadyIcon(tex, status)
         tex:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
         tex:SetTexCoord(0, 1, 0, 1)
         tex:Show()
+        if tex.backdrop then tex.backdrop:Show() end
     elseif status == "notready" then
         tex:SetTexture("Interface\\RaidFrame\\ReadyCheck-NotReady")
         tex:SetTexCoord(0, 1, 0, 1)
         tex:Show()
+        if tex.backdrop then tex.backdrop:Show() end
     elseif status == "waiting" then
         tex:SetTexture("Interface\\RaidFrame\\ReadyCheck-Waiting")
         tex:SetTexCoord(0, 1, 0, 1)
         tex:Show()
+        if tex.backdrop then tex.backdrop:Show() end
     else
         tex:SetTexture(nil)
         tex:Hide()
+        if tex.backdrop then tex.backdrop:Hide() end
     end
 end
 
 local function SetPresenceIcon(tex, present, icon)
+    if tex.backdrop then tex.backdrop:Show() end
     if present and icon then
         tex:SetTexture(icon)
         tex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -189,11 +202,13 @@ local function SetPresenceIcon(tex, present, icon)
     else
         tex:SetTexture(ICON_MISSING)
         tex:SetTexCoord(0, 1, 0, 1)
+        tex:SetDesaturated(false)
         tex:SetAlpha(0.9)
     end
 end
 
 local function SetUnknownPresenceIcon(tex)
+    if tex.backdrop then tex.backdrop:Show() end
     tex:SetTexture(ICON_BLANK)
     tex:SetTexCoord(0, 1, 0, 1)
     tex:SetDesaturated(true)
@@ -372,6 +387,19 @@ local function CreateRow(parent, index)
         row.bg:SetVertexColor(1, 1, 1, 0)
     end
 
+    row.highlight = row:CreateTexture(nil, "HIGHLIGHT")
+    row.highlight:SetAllPoints()
+    row.highlight:SetTexture(1, 1, 1, 0.08)
+
+    row.divider = row:CreateTexture(nil, "ARTWORK")
+    row.divider:SetPoint("BOTTOMLEFT", 0, 0)
+    row.divider:SetPoint("BOTTOMRIGHT", 0, 0)
+    row.divider:SetHeight(1)
+    row.divider:SetTexture(1, 1, 1, 0.05)
+
+    row.icons = {}
+    row.textFields = {}
+
     for _, col in ipairs(COLS) do
         if col.kind == "icon" then
             local size = col.iconSize or 16
@@ -379,6 +407,7 @@ local function CreateRow(parent, index)
             tex:SetSize(size, size)
             tex:SetPoint("LEFT", col.x + (col.w - size) / 2, 0)
             row[col.key] = tex
+            row.icons[col.key] = tex
         else
             local fs = row:CreateFontString(nil, "ARTWORK",
                 col.key == "name" and "GameFontNormalSmall" or "GameFontHighlightSmall")
@@ -386,6 +415,7 @@ local function CreateRow(parent, index)
             fs:SetWidth(col.w)
             fs:SetJustifyH(col.justify or "CENTER")
             row[col.key] = fs
+            row.textFields[#row.textFields + 1] = fs
         end
     end
 
@@ -487,20 +517,52 @@ local function ApplyDefaultSkin(f)
     f:SetBackdropBorderColor(1, 1, 1, 1)   -- fully opaque border
 end
 
+local ELVUI_BORDERED_ICONS = { "role", "spec", "flask", "food", "sta", "stat", "crit", "mast" }
+
+local function ApplyElvUIFont(fontString, E, size)
+    if not fontString or not fontString.FontTemplate then return end
+    local font = E.media and E.media.normFont
+    pcall(fontString.FontTemplate, fontString, font, size)
+end
+
+function ARC:SkinRowElvUI(row, E)
+    if not row or row.elvuiSkinned then return end
+    E = E or self.elvuiEngine
+    if not E or not E.media then return end
+
+    local blank = E.media.blankTex or "Interface\\Buttons\\WHITE8X8"
+    local border = E.media.bordercolor or { 0, 0, 0 }
+    local value = E.media.rgbvaluecolor or { 0.2, 0.8, 1 }
+
+    row.bg:SetTexture(blank)
+    row.highlight:SetTexture(blank)
+    row.highlight:SetVertexColor(value[1] or 1, value[2] or 1, value[3] or 1, 0.10)
+    row.divider:SetTexture(blank)
+    row.divider:SetVertexColor(border[1] or 0, border[2] or 0, border[3] or 0, 0.45)
+
+    for _, fontString in ipairs(row.textFields or {}) do
+        ApplyElvUIFont(fontString, E, 11)
+    end
+
+    for _, key in ipairs(ELVUI_BORDERED_ICONS) do
+        local texture = row.icons and row.icons[key]
+        if texture and texture.CreateBackdrop and not texture.backdrop then
+            pcall(texture.CreateBackdrop, texture, "Default", true)
+        end
+        if texture and texture.backdrop and texture.backdrop.SetBackdropBorderColor then
+            texture.backdrop:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0)
+        end
+    end
+
+    row.elvuiSkinned = true
+end
+
 -- Attempts to skin the ARC window with ElvUI's own Skins module so it
 -- matches the rest of the ElvUI-skinned UI. Completely optional and safe if
 -- ElvUI isn't installed, or if its Skins API differs on a given fork/version.
 --
--- IMPORTANT: each ElvUI call is wrapped in its OWN pcall, rather than one
--- big pcall around all of them. The previous version wrapped everything
--- together, which meant: if S:HandleFrame() succeeded (giving a correct
--- ElvUI skin) but S:HandleCloseButton() or S:HandleButton() then threw for
--- any reason, the whole block was treated as failed and ApplyDefaultSkin()
--- was called - which silently DISCARDED the working ElvUI skin and replaced
--- it with the plain one. That's almost certainly why it "didn't work
--- properly": a failure in a minor widget was undoing a successful frame
--- skin. Now, the main frame skin is considered successful (and kept) on its
--- own, independent of whether the smaller button skins succeed.
+-- Every optional ElvUI operation is isolated with pcall. A fork missing one
+-- button/font helper must not undo a successfully applied main-frame template.
 function ARC:TrySkinElvUI()
     local f = ARC.frame
     if not f or f.elvuiSkinned then return end
@@ -511,14 +573,17 @@ function ARC:TrySkinElvUI()
     if not E or not E.GetModule then return end
 
     local moduleOK, S = pcall(E.GetModule, E, "Skins")
-    if not moduleOK then return end
-    if not S or not S.HandleFrame then return end
+    if not moduleOK then S = nil end
 
-    -- Deliberately called WITHOUT a second argument: ElvUI's HandleFrame
-    -- signature/behavior for that second boolean has varied across
-    -- versions/forks, so omitting it uses ElvUI's own default behavior
-    -- rather than risking an unintended code path.
-    local frameOK = pcall(S.HandleFrame, S, f)
+    -- ElvUI 2.76 exposes its frame templates directly through the widget
+    -- toolkit. Some later forks additionally provide Skins:HandleFrame, so
+    -- retain that as a fallback instead of requiring it.
+    local frameOK = false
+    if f.SetTemplate then
+        frameOK = pcall(f.SetTemplate, f, "Transparent")
+    elseif S and S.HandleFrame then
+        frameOK = pcall(S.HandleFrame, S, f)
+    end
     if not frameOK then
         -- Core skin failed - leave the default ~70%-opacity skin in place
         -- (it's already applied from BuildMainFrame) and try again next
@@ -528,12 +593,45 @@ function ARC:TrySkinElvUI()
 
     f.elvuiSkinned = true
     ARC.elvuiActive = true
+    ARC.elvuiEngine = E
 
-    if f.closeButton and S.HandleCloseButton then
+    if f.header and f.header.SetTemplate then
+        pcall(f.header.SetTemplate, f.header, "Default", true)
+    end
+
+    local border = E.media and E.media.bordercolor or { 0, 0, 0 }
+    local value = E.media and E.media.rgbvaluecolor or { 0.2, 0.8, 1 }
+    local blank = E.media and E.media.blankTex or "Interface\\Buttons\\WHITE8X8"
+    if f.header and f.header.line then
+        f.header.line:SetTexture(blank)
+        f.header.line:SetVertexColor(border[1] or 0, border[2] or 0, border[3] or 0, 0.8)
+    end
+
+    ApplyElvUIFont(f.title, E, 13)
+    if f.title then
+        f.title:SetTextColor(value[1] or 1, value[2] or 0.82, value[3] or 0)
+    end
+    ApplyElvUIFont(f.summary, E, 11)
+    ApplyElvUIFont(f.hint, E, 10)
+    if f.header then
+        for _, fontString in ipairs(f.header.labels or {}) do
+            ApplyElvUIFont(fontString, E, 11)
+            fontString:SetTextColor(value[1] or 1, value[2] or 0.82, value[3] or 0)
+        end
+    end
+
+    if f.closeButton and S and S.HandleCloseButton then
         pcall(S.HandleCloseButton, S, f.closeButton)
     end
-    if f.announce and S.HandleButton then
+    if f.announce and S and S.HandleButton then
         pcall(S.HandleButton, S, f.announce)
+    end
+    if f.announce and f.announce.GetFontString then
+        ApplyElvUIFont(f.announce:GetFontString(), E, 11)
+    end
+
+    for _, row in ipairs(f.rows or {}) do
+        self:SkinRowElvUI(row, E)
     end
 end
 
@@ -616,6 +714,7 @@ function ARC:EnsureRow(i)
         row:SetPoint("TOPLEFT", f.rowsContainer, "TOPLEFT", 0, -(i - 1) * ROW_HEIGHT)
         row:SetPoint("TOPRIGHT", f.rowsContainer, "TOPRIGHT", 0, -(i - 1) * ROW_HEIGHT)
         f.rows[i] = row
+        if self.elvuiActive then self:SkinRowElvUI(row) end
     end
     return row
 end
@@ -635,6 +734,16 @@ local function FormatGear(e)
     if not e.gear or not e.gear.scanned then return "..." end
     if e.gear.issueCount == 0 then return "OK" end
     return "!" .. e.gear.issueCount
+end
+
+local function FormatPlayerName(e, fallbackName)
+    local name = e.name or fallbackName
+    if e.online == false then
+        return name .. " (off)"
+    elseif e.dead then
+        return name .. " (dead)"
+    end
+    return name
 end
 
 -- Builds the "(N seconds remaining)" / "(Finished)" suffix on the title bar.
@@ -685,13 +794,15 @@ function ARC:Render()
             row.spec:SetTexture(e.specIcon)
             row.spec:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             row.spec:Show()
+            if row.spec.backdrop then row.spec.backdrop:Show() end
         else
             row.spec:SetTexture(nil)
             row.spec:Hide()
+            if row.spec.backdrop then row.spec.backdrop:Hide() end
         end
 
         local r, g, b = ClassColor(e.class)
-        row.name:SetText(e.name or name)
+        row.name:SetText(FormatPlayerName(e, name))
         row.name:SetTextColor(r, g, b)
 
         if e.auraDataAvailable then

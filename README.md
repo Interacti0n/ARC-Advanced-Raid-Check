@@ -26,7 +26,8 @@ skipped by reminder/announcement actions.
    interface number despite using a 5.4.8 client.
 
 ARC has no required external libraries. ElvUI integration is optional and is
-detected automatically.
+detected automatically. When ElvUI is loaded, ARC adopts its transparent frame
+template, media colors, fonts, buttons, row highlights and icon borders.
 
 ## Usage
 
@@ -104,7 +105,7 @@ After updating the addon:
 
 ## Version
 
-Current version: **1.3.3**
+Current version: **1.4.0**
 
 ## License
 

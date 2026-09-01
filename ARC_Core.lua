@@ -72,7 +72,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.3.3"
+ARC.VERSION       = "1.4.0"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
 ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often than this
