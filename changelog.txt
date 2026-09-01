@@ -1,4 +1,8 @@
 v1.3.2 CHANGES
+  - Fixed a Lua error in flask/food row tooltips caused by consumable lookup
+    tables becoming module-local during the file split; aura names now come
+    from the shared roster scan. Also moved fallback UI icons into the UI
+    module so missing buffs render safely.
   - Added row-state colors: faded offline, red dead/ghost, grey unavailable
     aura/inspect range, and yellow while waiting for initial inspect data.
   - Added the exact state to each player tooltip.

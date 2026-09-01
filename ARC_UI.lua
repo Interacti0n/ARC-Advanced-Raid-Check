@@ -13,6 +13,8 @@ local HEADER_HEIGHT = 26
 local FOOTER_HEIGHT = 34
 local TOP_OFFSET    = 80   -- distance from frame top down to the row list
 local FRAME_WIDTH   = 684
+local ICON_MISSING  = "Interface\\RaidFrame\\ReadyCheck-NotReady"
+local ICON_BLANK    = "Interface\\Buttons\\UI-Quickslot2"
 
 -- Single source of truth for column layout. Both the header labels and the
 -- row widgets are built from this table, so they can no longer drift out of
@@ -264,28 +266,6 @@ local function GetBuffTooltipDetail(unit, matchName)
     return nil
 end
 
--- Finds the exact "Flask of ..." name currently on a unit (there's only one
--- flask category so the first match is it).
-local function FindFlaskName(unit)
-    if not unit or not UnitExists(unit) then return nil end
-    for i = 1, 40 do
-        local name, _, _, _, _, _, _, _, _, _, spellID = UnitBuff(unit, i)
-        if not name then break end
-        if FLASK_SPELL_IDS[spellID] or FLASK_NAMES[name] or name:find(FLASK_NAME_PATTERN) then return name end
-    end
-    return nil
-end
-
-local function FindFoodName(unit)
-    if not unit or not UnitExists(unit) then return nil end
-    for i = 1, 40 do
-        local name, _, _, _, _, _, _, _, _, _, spellID = UnitBuff(unit, i)
-        if not name then break end
-        if FOOD_SPELL_IDS[spellID] or FOOD_BUFF_NAMES[name] then return name end
-    end
-    return nil
-end
-
 --=============================================================================
 -- RIGHT-CLICK CONTEXT MENU (Whisper / Inspect / Remind)
 --=============================================================================
@@ -441,14 +421,14 @@ local function CreateRow(parent, index)
         end
 
         if e.flask then
-            local flaskName = FindFlaskName(e.unit)
+            local flaskName = e.flaskName
             if flaskName then
                 local detail = GetBuffTooltipDetail(e.unit, flaskName)
                 GameTooltip:AddLine(flaskName .. (detail and (" - " .. detail) or ""), 0.6, 0.9, 1)
             end
         end
         if e.food then
-            local foodName = FindFoodName(e.unit)
+            local foodName = e.foodName
             local detail = foodName and GetBuffTooltipDetail(e.unit, foodName)
             GameTooltip:AddLine("Food: " .. (detail or foodName or "Well Fed"), 1, 0.82, 0)
         end

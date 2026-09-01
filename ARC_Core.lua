@@ -180,10 +180,6 @@ local MASTERY_BUFFS = {
 }
 local MASTERY_BUFF_IDS = { [19740] = true, [116956] = true, [93435] = true, [128997] = true }
 
--- Fallback generic icons when nothing is found so the column isn't blank.
-local ICON_MISSING = "Interface\\RaidFrame\\ReadyCheck-NotReady"
-local ICON_BLANK   = "Interface\\Buttons\\UI-Quickslot2" -- faint empty slot look
-
 --=============================================================================
 -- STATE
 --=============================================================================
@@ -192,7 +188,7 @@ local ICON_BLANK   = "Interface\\Buttons\\UI-Quickslot2" -- faint empty slot loo
 --   name, class, unit, role, ready,
 --   specID, specName, specIcon, specSource ("self"|"comm"|"inspect"),
 --   ilvl, ilvlApprox, durPct, hasARC, lastComm, lastInspectAttempt,
---   flask, flaskIcon, food, foodIcon, sta, stat, crit, mast,
+--   flask, flaskName, flaskIcon, food, foodName, foodIcon, sta, stat, crit, mast,
 -- }
 ARC.roster = {}
 ARC.order  = {}              -- ordered list of fullNames for display
@@ -291,8 +287,8 @@ end
 
 local function ScanUnitBuffs(unit)
     local out = {
-        flask = false, flaskIcon = nil,
-        food  = false, foodIcon  = nil,
+        flask = false, flaskName = nil, flaskIcon = nil,
+        food  = false, foodName  = nil, foodIcon  = nil,
         -- For the four raid-buff categories we also keep the exact buff
         -- name that matched (staName/statName/critName/mastName), so the
         -- column-header "source list" tooltip and the per-row tooltip can
@@ -309,9 +305,9 @@ local function ScanUnitBuffs(unit)
         if not name then break end
         local source = caster and GetUnitIdentity(caster) or nil
         if (not out.flask) and (FLASK_SPELL_IDS[spellID] or FLASK_NAMES[name] or name:find(FLASK_NAME_PATTERN)) then
-            out.flask, out.flaskIcon = true, icon
+            out.flask, out.flaskName, out.flaskIcon = true, name, icon
         elseif (not out.food) and (FOOD_SPELL_IDS[spellID] or FOOD_BUFF_NAMES[name]) then
-            out.food, out.foodIcon = true, icon
+            out.food, out.foodName, out.foodIcon = true, name, icon
         elseif (not out.sta) and (STAMINA_BUFF_IDS[spellID] or STAMINA_BUFFS[name]) then
             out.sta, out.staName, out.staIcon, out.staSource = true, name, icon, source
         elseif (not out.stat) and (STATS_BUFF_IDS[spellID] or STATS_BUFFS[name]) then
@@ -397,8 +393,8 @@ local function RefreshUnitPublicData(unit)
 
     if e.auraDataAvailable then
         local buffs = ScanUnitBuffs(unit)
-        e.flask, e.flaskIcon = buffs.flask, buffs.flaskIcon
-        e.food,  e.foodIcon  = buffs.food,  buffs.foodIcon
+        e.flask, e.flaskName, e.flaskIcon = buffs.flask, buffs.flaskName, buffs.flaskIcon
+        e.food,  e.foodName,  e.foodIcon  = buffs.food,  buffs.foodName,  buffs.foodIcon
         e.sta, e.stat, e.crit, e.mast = buffs.sta, buffs.stat, buffs.crit, buffs.mast
         e.staName, e.statName, e.critName, e.mastName =
             buffs.staName, buffs.statName, buffs.critName, buffs.mastName
