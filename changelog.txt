@@ -1,0 +1,80 @@
+v1.3.2 CHANGES
+  - Added row-state colors: faded offline, red dead/ghost, grey unavailable
+    aura/inspect range, and yellow while waiting for initial inspect data.
+  - Added the exact state to each player tooltip.
+  - Players whose aura data is unavailable are no longer falsely counted or
+    announced as missing flask/food.
+
+v1.3.1 CHANGES
+  - Added an ARC roster column, per-player version tooltip, and ARC user count
+    in the window summary.
+  - Raid-buff columns now display the actual active aura icon for each player
+    instead of one generic icon per category.
+
+v1.3.0 CHANGES
+  - Corrected role icons to use Blizzard's MoP portrait-role atlas, fixing the
+    offset/cropped tank, healer, and damage icons.
+  - Added upgrade-aware item-level scanning from inspected item tooltips, with
+    a MoP upgrade-ID fallback and correct 16-slot/two-hand weighting.
+  - Added a Gear column and detailed row tooltip checks for empty gem sockets,
+    missing enchants, empty required slots, low-level items, and obvious
+    STR/AGI/INT mismatches for the player's specialization.
+  - Added a configurable minimum item-level threshold (default 450).
+  - Durability now displays the lowest equipped-item percentage (with both
+    average and lowest values in the tooltip) when the player runs ARC.
+    Players without ARC remain N/A because the client exposes no reliable
+    remote durability estimate.
+
+v1.2.1 CHANGES
+  - Split the monolithic Lua implementation into Core, Inspect, UI, Options,
+    and Events/Commands modules with an explicit TOC load order.
+  - Added README.md with installation, usage, limitations, file layout, and a
+    quick in-game verification checklist.
+  - Fixed raid-buff source tooltips so they deduplicate and show the actual
+    aura caster instead of incorrectly listing every buff recipient.
+  - Added locale-neutral spell-ID matching for MoP flasks, food and raid buffs,
+    while retaining English-name fallbacks for private-server compatibility.
+  - Added cross-realm-safe roster keys and whisper targets.
+  - Hardened addon messages: reports are now attributed to the authenticated
+    CHAT_MSG_ADDON sender and ignored when the sender is not in the group.
+  - Corrected inspect item-level estimation to use MoP's 16-slot weighting and
+    to count missing slots as zero instead of inflating the average.
+  - Synchronized the TOC and runtime versions and stopped hiding UI init errors.
+
+v1.2.0 CHANGES
+  - Minimap button (left-click toggles the window, right-click opens
+    options, drag to reposition). Hand-rolled with no external library.
+  - Hovering the Stam/Stat/Crit/Mast column headers now lists exactly who
+    in the raid is providing that buff and with which spell.
+  - Right-click any player row for a menu: Whisper, Inspect, or Remind
+    (sends them a whisper listing their missing flask/food).
+  - A proper Interface Options panel (/arc options) for auto-hide, lock,
+    minimap button visibility, and window scale, alongside the existing
+    slash commands.
+  - Fixed ElvUI skinning: it previously wrapped the whole skin attempt in
+    one pcall, so if a minor widget (close button, announce button) failed
+    to skin, the working main-frame skin was discarded and silently
+    replaced with the default look. Each piece is now skinned and confirmed
+    independently, so a minor failure no longer undoes a successful one.
+
+v1.1.0 CHANGES
+  - Header/row columns now share ONE layout table, so labels and content
+    always line up (this also fixes the "rows overlapping" look - it was
+    really a header/row misalignment plus a too-tight ROW_HEIGHT).
+  - Full-length column labels: "Flask", "Food", "Stam", "Stat", "Crit", "Mast".
+  - Mouseover tooltip now shows the EXACT flask/food buff text (e.g. the
+    real "+300 Intellect and 300 Stamina" line), scanned live off a hidden
+    tooltip only when you hover a row (no extra per-second overhead).
+  - Window title shows a live ready-check countdown, e.g.
+    "ARC - Ready Check Overview (13 seconds remaining)", and switches to
+    "(Finished)" once the check ends.
+  - The initiator of a ready check is forced to show the "ready" check icon
+    immediately; everyone else shows "?" (waiting) until they respond, and
+    anyone still unanswered when the check ends is locked to the "X"
+    (not ready) icon so results stay visible.
+  - The window no longer auto-closes a few seconds after the ready check
+    ends. Instead it hides the moment you enter combat (PLAYER_REGEN_DISABLED,
+    i.e. the pull), controlled by the same /arc autohide toggle (default ON).
+  - Optional ElvUI skinning: if ElvUI is loaded, ARC reskins its frame,
+    close button, and "Announce Missing" button using ElvUI's own Skins
+    module, so it matches your ElvUI look automatically.

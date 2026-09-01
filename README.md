@@ -1,59 +1,111 @@
-# ARC - Advanced Ready Check
+# ARC — Advanced Ready Check
 
-A lightweight raid/party overview panel for **World of Warcraft: Mists of Pandaria (client 5.4.8, Interface 50408)**. ARC pops open automatically on a ready check (or on demand via `/arc`) and gives you a clean, at-a-glance view of your group's readiness, consumables, raid buffs, item level, and durability - for groups of 5 to 25.
+ARC is a lightweight ready-check overview for World of Warcraft: Mists of
+Pandaria 5.4.8 (`Interface 50400`). It shows the group roster together with
+ready status, role, specialization, consumables, raid buffs, upgrade-aware item
+level, durability, missing gems/enchants and basic spec-appropriate gear checks.
+The roster also identifies who is running ARC and which version they report.
 
-## Features
+Roster row states are color coded:
 
-- **Auto-opens on Ready Check**, or toggle anytime with `/arc`.
-- **Live roster table** sorted by role (Tank / Healer / DPS), showing per player:
-  - Ready status (✓ / ✗ / ?)
-  - Role and spec icons
-  - Flask and Food presence
-  - Four raid-buff categories: **Stam**ina, **Stat**s, **Crit**, **Mast**ery
-  - Item level and durability
-- **Hides automatically when you pull** (`PLAYER_REGEN_DISABLED`), so it's out of your way in combat. Toggle with `/arc autohide`.
-- **Exact buff details on hover** - mouse over a player to see their real flask/food tooltip text (e.g. "+300 Intellect and 300 Stamina"), not just a generic icon.
-- **"Announce Missing" button** - posts who's missing flask/food to raid/raid warning chat in one click.
-- **Optional ElvUI skinning** - if ElvUI is loaded, ARC reskins itself to match automatically via ElvUI's own Skins API. Falls back to a clean ~70%-opacity default skin otherwise.
-- **Draggable, lockable, and remembers its position** between sessions.
+- strongly faded — offline
+- soft red — dead or ghost
+- soft grey — aura/required inspect data is out of range
+- soft yellow — waiting for the first inspect result
+
+Unavailable aura data is never counted as a missing flask or food and is
+skipped by reminder/announcement actions.
 
 ## Installation
 
-1. Download or clone this repository.
-2. Copy the folder into your WoW `Interface/AddOns/` directory so the path looks like:
-   ```
-   Interface/AddOns/ARC/ARC.toc
-   Interface/AddOns/ARC/ARC.lua
-   ```
-3. Restart WoW (or `/reload`) and make sure **ARC** is checked in the AddOns list at the character-select screen.
+1. Copy the `ARC` directory into:
+   `World of Warcraft/Interface/AddOns/`
+2. The resulting path must contain `ARC/ARC.toc` (not `ARC/ARC/ARC.toc`).
+3. Restart the client or run `/reload` after replacing addon files.
+4. Enable **Load out of date AddOns** only if the server reports a different
+   interface number despite using a 5.4.8 client.
+
+ARC has no required external libraries. ElvUI integration is optional and is
+detected automatically.
 
 ## Usage
 
-ARC opens automatically the moment a ready check starts. You can also control it manually:
+The window opens automatically when a ready check begins. Use `/arc` to show
+or hide it manually. Hover a player row for details and right-click a row for
+Whisper, Inspect and Remind actions. Hover the Stam, Stat, Crit or Mast header
+to see the detected source of that raid buff.
 
-| Command | Description |
-|---|---|
-| `/arc` | Show/hide the window |
-| `/arc lock` | Lock the window in place (disables dragging) |
-| `/arc unlock` | Unlock the window |
-| `/arc reset` | Reset the window to its default position |
-| `/arc autohide` | Toggle auto-hide when you enter combat (the pull). Default: **ON** |
-| `/arc help` | List all commands in chat |
+Available commands:
 
-## How the data works
+- `/arc` — show or hide the window
+- `/arc lock` — lock the window position
+- `/arc unlock` — unlock the window position
+- `/arc reset` — reset the window position
+- `/arc autohide` — toggle hiding on combat start
+- `/arc minimap` — toggle the minimap button
+- `/arc options` — open the options panel
+- `/arc help` — print the command list
 
-This section explains what's actually possible with the WoW 5.4.8 API, and why some numbers behave differently for different players.
+Settings are saved account-wide in `ARC_DB`.
 
-- **Ready status, role, and buffs** (flask / food / raid buffs) are read directly off every unit in your group with `UnitBuff()`, `GetReadyCheckStatus()`, and `UnitGroupRolesAssigned()`. This is always accurate for **everyone**, whether or not they run ARC, because that data is visible to all group members.
-- **Item level and durability of other players are not exposed by the WoW API.** Blizzard removed remote-durability access, and there's no reliable "true" item level call that accounts for reforging/upgrades on other units. So ARC gets this two different ways:
-  - If the other player **also runs ARC**, their client reports its own 100%-accurate item level and durability to you over a hidden addon-message channel (prefix `ARC1`).
-  - If they **don't run ARC**, ARC falls back to a live `/inspect` to estimate item level (shown with a leading `~`). Durability for non-ARC players can't be retrieved at all and shows as `-`.
-- **Specialization** works the same way: instant and exact for yourself, via `/inspect` or addon comms for everyone else.
+The options panel also contains a configurable minimum item-level threshold
+(default **450**). Individual items below it are reported in the player tooltip.
 
-**In short: the more people in your raid running ARC, the more accurate everyone's numbers are.** This is standard behavior for ready-check tools of this era, not a bug.
+## Data accuracy and limitations
 
-## Known Limitations
+- Ready state, role and visible auras come directly from the WoW unit API.
+- The local player's item level and durability are read directly and are
+  accurate.
+- Remote durability is not exposed by the client. It is available only when
+  the other player also runs ARC and reports their own value through the addon
+  channel. The row shows the lowest equipped-item durability; the tooltip also
+  shows the average. Without ARC it is displayed as `N/A` rather than inventing
+  an unreliable estimate.
+- For players without ARC, item level and specialization use the inspect API.
+  The item-level scanner reads the value shown by the item tooltip, including
+  MoP item upgrades, and uses the standard 16-slot equipment weighting. It is
+  still marked as an estimate (`~`) because inspect data can be unavailable or
+  stale while a player is out of range.
+- Gear inspection reports empty gem sockets, missing enchants on normally
+  enchantable slots, items below the configured threshold, empty required
+  slots, and obvious STR/AGI/INT mismatches for the inspected specialization.
+  It deliberately does not judge secondary-stat priorities or trinket procs.
+- Aura detection primarily uses locale-neutral spell IDs. English aura-name
+  fallbacks are retained for private-server cores that return incomplete aura
+  data.
+- A server core may implement parts of the 5.4.8 API differently. If something
+  is missing, first test with Lua errors enabled (`/console scriptErrors 1`),
+  then `/reload` and repeat the ready check.
 
-- Buff name matching is done against the **English (enUS/enGB)** aura names. On a non-English client, translate the strings in the buff tables near the top of `ARC.lua` to match what `UnitBuff()` returns for you.
-- Durability for players not running ARC is unavailable - this is a WoW API limitation, not something ARC can work around.
-- Built and tested specifically against the MoP 5.4.8 API surface; it will **not** work unmodified on later client versions.
+## Files
+
+- `ARC_Core.lua` — database, roster, aura scanning and addon communication
+- `ARC_Gear.lua` — upgrade-aware item level and configurable gear rules
+- `ARC_Inspect.lua` — inspect queue, specialization and item-level fallback
+- `ARC_UI.lua` — main window, rows, tooltips and announcements
+- `ARC_Options.lua` — minimap button and Interface Options panel
+- `ARC.lua` — event dispatch and slash commands
+- `ARC.toc` — addon metadata and load order
+- `changelog.txt` — release history
+
+The load order in `ARC.toc` is significant. `ARC_Core.lua` must remain first
+and `ARC.lua` must remain last.
+
+## Quick verification checklist
+
+After updating the addon:
+
+1. Run `/reload` and confirm there is no Lua error.
+2. Open `/arc options`, change the scale and toggle the minimap button.
+3. Start a ready check in a party or raid.
+4. Verify ready icons, consumables and raid-buff source tooltips.
+5. Right-click another player and test Whisper or Inspect.
+6. Test **Announce Missing** in the intended group channel.
+
+## Version
+
+Current version: **1.3.2**
+
+## License
+
+ARC is released under the [MIT License](LICENSE).

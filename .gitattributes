@@ -1,0 +1,7 @@
+* text=auto
+
+# WoW addon sources are commonly edited on Windows.
+*.lua text eol=crlf
+*.toc text eol=crlf
+*.txt text eol=crlf
+*.md text eol=lf

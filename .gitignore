@@ -1,0 +1,11 @@
+# Packaged releases and local build output
+/dist/
+/build/
+*.zip
+
+# Editor and operating-system files
+/.vscode/
+/.idea/
+.DS_Store
+Thumbs.db
+*.log
