@@ -1,3 +1,97 @@
+v1.5.0 CHANGES
+  - Expanded Tal to Talents in the roster, summary and help, widened its column,
+    and removed the available-tiers/no-glyph parenthesis from the row tooltip.
+  - Added actual item icons before problem-item names in the standalone check.
+    Hover shows the native tooltip for the captured full item link, preserving
+    gems, enchant and upgrade fields without querying a changed target.
+    Empty slots have no icon; reused rows and closing the window clear tooltips.
+  - Added regression coverage for icon layout, full-link tooltip snapshots,
+    target changes, row reuse/cleanup, missing icon data and tooltip API failures.
+  - Added spec-based tank preparation checks: Protection paladin Righteous Fury,
+    Blood DK Blood Presence, Protection warrior Defensive Stance, Guardian Bear
+    Form and Brewmaster Stance of the Sturdy Ox. RF on Holy/Retribution is an
+    error. Hidden form auras require a fresh same-spec owner report, not guesswork.
+  - Added required living pets for hunters, Frost mages and Unholy DKs. Warlocks
+    with Grimoire of Sacrifice require its active buff; other builds require a
+    pet. Talent choice comes from matched inspect or current ARC data.
+  - Added hunter Growl AUTOCAST detection through the full pet spellbook, with
+    an action-bar fallback. Only fresh same-pet-GUID ARC reports can flag ON;
+    unseen remote pets and unavailable autocast data remain unverified.
+  - Added an HS column for reported Healthstone charges, missing-item totals
+    and direct standalone findings. Applies to our group with an online warlock;
+    excludes the bank, does not infer cooldown and needs the owner's updated ARC.
+  - Extended readiness messages with backwards-compatible P1 pet/Growl,
+    Sacrifice choice, Healthstone and stance data. Added pet/bag/stance refresh
+    events and 30-second report expiry; no automatic character/pet actions.
+  - Expanded tests and release notes for legacy pet/stance API tuples, talent
+    choice versus buff, same-pet/spec binding, expiry, Healthstone charges and UI.
+  - Added a prominent clickable raid-setup banner: red actual/expected
+    mode/size and loot mismatches, amber unconfigured/unverified state.
+    Configure through /arc raid or Options. Uses actual instance difficulty
+    inside raids; never changes raid settings, sends chat or forces ARC open.
+  - Added Talents/Self roster columns, affected-player totals and detailed report
+    sections for empty unlocked talent tiers and missing class self buffs.
+    Talents use the original 18-entry MoP API and class unlock levels; glyphs
+    are intentionally excluded. Unavailable or stale data is not a pass/failure.
+  - Added level-90 lethal-poison, spec-aware shaman shield, priest Inner buff,
+    grouped druid Symbiosis, mage armor and paladin seal presence checks.
+  - Added self-reported shaman temporary weapon-imbue presence using the legacy
+    three-values-per-hand API. Exempts shields/offhands; no enchant-ID claim.
+    A backwards-compatible readiness extension shares talents and imbue state.
+    Group reports refresh every 15 seconds while hidden, retaining the 2-second
+    throttle. Missing/older peers and expired reports remain unverified.
+  - Expanded regression coverage for raid setup UI/events/settings, talent
+    unlocks and cache failures, class rules, legacy weapon tuples and comms.
+  - Added ARC Check to player right-click menus (target/focus, party/raid and
+    standard-menu ElvUI frames) and ARC's own roster row menu.
+    Opening menus sends no inspect request; unavailable players are disabled.
+    Clicks revalidate the captured player GUID and range. Name-only menus
+    require an exact known name/realm, never an unrelated current target.
+  - Added context-menu regression coverage for duplicate hooks, submenus,
+    unavailable/replaced players, name/realm resolution and existing row actions.
+  - Moved ARC Check inside the inspect title bar, left of Close. The compact
+    button reserves title space and no longer hangs below the inspect tabs.
+  - Simplified standalone checks: ordered player overview, gear verdict, only
+    problem slots with explicit reasons, and separate Unverified/Readiness
+    sections. Removed healthy item rows, zero counters and passive buff clutter.
+  - Added shared raid/standalone PvE validation for MoP rare-or-better gems,
+    incorrect primary stats, PvP power/resilience and PvP-oriented meta effects.
+    Supports Perfect cuts, profession/legendary gems and known meta proc roles.
+  - Added explicit top-tier enchant rules with lower-rank/PvP detection and
+    profession, runeforge, scope, shield and caster off-hand handling.
+    Equivalent PvE effects are allowed regardless of cosmetic PvP provenance.
+  - Resolve actual gem items with GetItemGem instead of treating legacy item-link
+    gem fields as item IDs. Check inserted gems in additional sockets as well.
+  - Keep gem-cache retries separate from equipped ilvl. Unknown/uncached
+    validations no longer produce green OK; raid tooltips explain each finding.
+  - Corrected hunter ranged weapon weighting in estimated equipped ilvl.
+  - Documented the PvE policy and bundled WoWSims catalog source/MIT notice.
+  - Guarded player-check entry points when an in-session update retains an old
+    TOC and omits ARC_PlayerCheck.lua. Show a restart/reinstall message instead
+    of nil-method errors on load, world entry, update ticks or /arc check.
+    The raid UI remains available; a full client restart loads the new module.
+  - Corrected upgrade instructions to require a full WoW restart for new files.
+    Tests now load ARC.toc and cover the cached-TOC/missing-module case.
+  - Added a saved manual-only opening mode in Options and /arc manual [on|off].
+    Ready-check tracking and the standard Blizzard prompt remain available.
+  - Added ElvUI-compatible Ready / Not Ready buttons at the top-right of ARC,
+    enabled only for a pending, unexpired ready check on the local player.
+  - Replaced the minimum-ilvl slider with an exact numeric field (400-600).
+    Enter/Apply saves; Escape cancels; invalid input preserves the old value.
+    Threshold changes invalidate raid gear checks and mark old detail snapshots.
+  - Added ARC Check in the Blizzard inspect title bar and /arc check for players
+    outside the group. The other player does not need ARC installed.
+  - Added a standalone ElvUI-compatible, scrollable problem report with identity,
+    spec, gear-check totals and explicit details for affected slots.
+  - Pinned reports to player GUIDs, with snapshot age and a same-player Refresh
+    action; strangers are never inserted into the raid roster.
+  - Coordinated manual and background inspect requests, with range checks,
+    timeouts and safe cancellation when another addon replaces inspect data.
+  - Incomplete item caches no longer produce a passed check or partial iLvl.
+    Filled socket counts remain available even before gem names are cached.
+  - Added mocked Lua regression coverage for inspection, reports, manual mode,
+    ready-check responses and numeric settings validation.
+
 v1.4.0 CHANGES
   - Reworked optional ElvUI integration for the MoP-era ElvUI 2.76 API.
   - ARC now uses ElvUI's transparent frame template, media colors and fonts,

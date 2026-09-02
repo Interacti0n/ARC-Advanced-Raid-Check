@@ -11,8 +11,8 @@ local GetReadyCheckSecondsLeft = I.GetReadyCheckSecondsLeft
 local ROW_HEIGHT    = 26   -- was 22 - main fix for rows crowding/overlapping
 local HEADER_HEIGHT = 26
 local FOOTER_HEIGHT = 34
-local TOP_OFFSET    = 80   -- distance from frame top down to the row list
-local FRAME_WIDTH   = 684
+local TOP_OFFSET    = 162  -- ready responses, visible raid setup banner, summary, labels
+local FRAME_WIDTH   = 850
 local ICON_MISSING  = "Interface\\RaidFrame\\ReadyCheck-NotReady"
 local ICON_BLANK    = "Interface\\Buttons\\UI-Quickslot2"
 
@@ -34,7 +34,10 @@ local COLS = {
     { key = "ilvl",  label = "iLvl",  x = 462, w = 52,  kind = "text", justify = "CENTER" },
     { key = "dur",   label = "Dur",   x = 516, w = 52,  kind = "text", justify = "CENTER" },
     { key = "gear",  label = "Gear",  x = 570, w = 52,  kind = "text", justify = "CENTER" },
-    { key = "arc",   label = "ARC",   x = 624, w = 42,  kind = "text", justify = "CENTER" },
+    { key = "tal",   label = "Talents", x = 624, w = 60, kind = "text", justify = "CENTER" },
+    { key = "selfBuff", label = "Self", x = 686, w = 50, kind = "text", justify = "CENTER" },
+    { key = "hs",    label = "HS",    x = 738, w = 40,  kind = "text", justify = "CENTER" },
+    { key = "arc",   label = "ARC",   x = 780, w = 50,  kind = "text", justify = "CENTER" },
 }
 
 --=============================================================================
@@ -221,7 +224,7 @@ local function GetEntryVisualState(e)
     if not e.auraDataAvailable or ((not e.gear or not e.gear.scanned) and e.inspectable == false) then
         return "range"
     end
-    if not e.gear or not e.gear.scanned then return "waiting" end
+    if not e.gear or not e.gear.scanned or e.gear.validationPending then return "waiting" end
     return "normal"
 end
 
@@ -327,6 +330,8 @@ local function BuildPlayerMenu(e)
                 if e.unit and UnitExists(e.unit) then InspectUnit(e.unit) end
             end,
         }
+        local checkItem = ARC.CreatePlayerCheckMenuItem and ARC:CreatePlayerCheckMenuItem(e.unit, e.fullName)
+        if checkItem then menu[#menu + 1] = checkItem end
         menu[#menu + 1] = {
             text = "Remind (missing consumables)",
             notCheckable = true,
@@ -347,8 +352,8 @@ local function AddGearTooltip(e)
     end
 
     local minLevel = (ARC_DB and ARC_DB.minItemLevel) or 450
-    if gear.issueCount == 0 then
-        GameTooltip:AddLine("Gems, enchants, primary stat and item level: OK", 0.2, 1, 0.2)
+    if gear.issueCount == 0 and gear.auditComplete then
+        GameTooltip:AddLine("No issues found under ARC gear rules", 0.2, 1, 0.2)
     end
     if gear.missingGems > 0 then
         GameTooltip:AddLine("Missing gems: " .. gear.missingGems .. " (" ..
@@ -357,6 +362,9 @@ local function AddGearTooltip(e)
     if #gear.missingEnchants > 0 then
         GameTooltip:AddLine("Missing enchants: " .. table.concat(gear.missingEnchants, ", "), 1, 0.25, 0.25, true)
     end
+    for _, text in ipairs(gear.badGems or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.badEnchants or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.unverified or {}) do GameTooltip:AddLine("Unverified: " .. text, 1, 0.78, 0.2, true) end
     if #gear.wrongPrimary > 0 then
         GameTooltip:AddLine("Wrong primary stat (expected " .. (gear.expectedPrimary or "?") .. "):", 1, 0.35, 0.2)
         for _, text in ipairs(gear.wrongPrimary) do
@@ -482,6 +490,20 @@ local function CreateRow(parent, index)
             GameTooltip:AddLine("Durability unavailable - the WoW API exposes no remote value or reliable estimate", 0.6, 0.6, 0.6, true)
         end
         AddGearTooltip(e)
+        if ARC.GetTalentStatus then
+            local status, tone, details = ARC:GetTalentStatus(e)
+            GameTooltip:AddLine("Talents: " .. status, 1, 0.82, 0)
+            for _, detail in ipairs(details) do GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
+        end
+        if ARC.GetSelfBuffStatus then
+            local status, tone, details = ARC:GetSelfBuffStatus(e)
+            GameTooltip:AddLine("Self / tank / pet readiness: " .. status, 1, 0.82, 0)
+            for _, detail in ipairs(details) do GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
+        end
+        if ARC.GetHealthstoneStatus then
+            local _, tone, detail = ARC:GetHealthstoneStatus(e)
+            GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true)
+        end
         GameTooltip:AddLine(" ")
         GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
         GameTooltip:Show()
@@ -612,6 +634,7 @@ function ARC:TrySkinElvUI()
         f.title:SetTextColor(value[1] or 1, value[2] or 0.82, value[3] or 0)
     end
     ApplyElvUIFont(f.summary, E, 11)
+    if f.raidBanner then ApplyElvUIFont(f.raidBanner.label, E, 12) end
     ApplyElvUIFont(f.hint, E, 10)
     if f.header then
         for _, fontString in ipairs(f.header.labels or {}) do
@@ -623,16 +646,45 @@ function ARC:TrySkinElvUI()
     if f.closeButton and S and S.HandleCloseButton then
         pcall(S.HandleCloseButton, S, f.closeButton)
     end
-    if f.announce and S and S.HandleButton then
-        pcall(S.HandleButton, S, f.announce)
-    end
-    if f.announce and f.announce.GetFontString then
-        ApplyElvUIFont(f.announce:GetFontString(), E, 11)
+    for _, button in ipairs({ f.announce, f.readyYes, f.readyNo }) do
+        if S and S.HandleButton then pcall(S.HandleButton, S, button) end
+        if button.GetFontString then ApplyElvUIFont(button:GetFontString(), E, 11) end
     end
 
     for _, row in ipairs(f.rows or {}) do
         self:SkinRowElvUI(row, E)
     end
+end
+
+function ARC:CanRespondReadyCheck()
+    if not self.readyCheckActive or self.readyCheckResponded or not ConfirmReadyCheck or not GetReadyCheckStatus then return false end
+    if self.readyCheckExpiresAt and GetTime() >= self.readyCheckExpiresAt then return false end
+    local seconds = GetReadyCheckSecondsLeft()
+    if seconds ~= nil and seconds <= 0 then return false end
+    return GetReadyCheckStatus("player") == "waiting"
+end
+
+function ARC:UpdateReadyButtons()
+    local f = self.frame
+    if not f or not f.readyYes then return end
+    for _, button in ipairs({ f.readyYes, f.readyNo }) do
+        if self:CanRespondReadyCheck() then button:Enable() else button:Disable() end
+    end
+end
+
+function ARC:RespondReadyCheck(ready)
+    if not self:CanRespondReadyCheck() then self:UpdateReadyButtons(); return end
+    -- Legacy MoP API uses 1 for ready and nil for not ready (not numeric 0).
+    -- Only this hardware-click callback sends a response; never auto-answer.
+    self.readyCheckResponded = true
+    local ok = pcall(ConfirmReadyCheck, ready and 1 or nil)
+    if not ok then
+        self.readyCheckResponded = false
+        print("|cff33ff99ARC:|r Could not respond; use the Blizzard ready-check dialog.")
+    elseif ReadyCheckFrame then
+        ReadyCheckFrame:Hide()
+    end
+    self:UpdateReadyButtons()
 end
 
 local function BuildMainFrame()
@@ -663,7 +715,9 @@ local function BuildMainFrame()
     ApplyDefaultSkin(f)
 
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    title:SetPoint("TOP", 0, -12)
+    title:SetPoint("TOPLEFT", 12, -12)
+    title:SetWidth(430)
+    title:SetJustifyH("LEFT")
     title:SetText("ARC - Ready Check Overview")
     f.title = title
 
@@ -672,9 +726,37 @@ local function BuildMainFrame()
     close:SetScript("OnClick", function() ARC:Hide() end)
     f.closeButton = close
 
+    f.readyNo = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.readyNo:SetSize(90, 22)
+    f.readyNo:SetPoint("TOPRIGHT", -40, -12)
+    f.readyNo:SetText("Not Ready")
+    f.readyNo:SetScript("OnClick", function() ARC:RespondReadyCheck(false) end)
+    f.readyNo:Disable()
+    f.readyYes = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.readyYes:SetSize(78, 22)
+    f.readyYes:SetPoint("RIGHT", f.readyNo, "LEFT", -6, 0)
+    f.readyYes:SetText("Ready")
+    f.readyYes:SetScript("OnClick", function() ARC:RespondReadyCheck(true) end)
+    f.readyYes:Disable()
+
+    local banner = CreateFrame("Button", nil, f)
+    banner:SetPoint("TOPLEFT", 12, -52)
+    banner:SetPoint("TOPRIGHT", -12, -52)
+    banner:SetHeight(48)
+    banner.bg = banner:CreateTexture(nil, "BACKGROUND")
+    banner.bg:SetAllPoints()
+    banner.bg:SetTexture(1, 1, 1, 1)
+    banner.label = banner:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    banner.label:SetPoint("TOPLEFT", 8, -4)
+    banner.label:SetPoint("BOTTOMRIGHT", -8, 4)
+    banner.label:SetJustifyH("LEFT")
+    banner.label:SetWordWrap(true)
+    banner:SetScript("OnClick", function() ARC:OpenRaidOptions() end)
+    f.raidBanner = banner
+
     local summary = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    summary:SetPoint("TOPLEFT", 12, -30)
-    summary:SetPoint("TOPRIGHT", -12, -30)
+    summary:SetPoint("TOPLEFT", 12, -110)
+    summary:SetPoint("TOPRIGHT", -12, -110)
     summary:SetJustifyH("LEFT")
     f.summary = summary
 
@@ -684,7 +766,7 @@ local function BuildMainFrame()
     f.rowsContainer = scroll
 
     f.header = CreateHeader(f)
-    f.header:SetPoint("TOPLEFT", 8, -50)
+    f.header:SetPoint("TOPLEFT", 8, -132)
 
     f.announce = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.announce:SetSize(150, 20)
@@ -732,7 +814,7 @@ end
 
 local function FormatGear(e)
     if not e.gear or not e.gear.scanned then return "..." end
-    if e.gear.issueCount == 0 then return "OK" end
+    if e.gear.issueCount == 0 then return e.gear.auditComplete and "OK" or "?" end
     return "!" .. e.gear.issueCount
 end
 
@@ -766,13 +848,35 @@ local function UpdateTitleText()
     f.title:SetText(text)
 end
 
+local function ReadinessCell(widget, text, tone)
+    widget:SetText(text)
+    if text == "-" then widget:SetTextColor(0.55, 0.55, 0.55)
+    elseif tone == "bad" then widget:SetTextColor(1, 0.25, 0.25)
+    elseif tone == "warn" then widget:SetTextColor(1, 0.78, 0.2)
+    else widget:SetTextColor(0.2, 1, 0.2) end
+end
+
 function ARC:Render()
     local f = self.frame
     if not f or not f:IsShown() then return end
 
     UpdateTitleText()
+    self:UpdateReadyButtons()
+    local setupText, setupTone = self:GetRaidSetupStatus()
+    f.raidBanner.label:SetText(setupText)
+    if setupTone == "bad" then
+        f.raidBanner.bg:SetVertexColor(0.8, 0.04, 0.04, 0.9)
+        f.raidBanner.label:SetTextColor(1, 1, 1)
+    elseif setupTone == "warn" then
+        f.raidBanner.bg:SetVertexColor(0.55, 0.34, 0.02, 0.8)
+        f.raidBanner.label:SetTextColor(1, 0.9, 0.45)
+    else
+        f.raidBanner.bg:SetVertexColor(0.08, 0.23, 0.19, 0.65)
+        f.raidBanner.label:SetTextColor(0.7, 0.9, 0.8)
+    end
 
     local total, ready, missingFlask, missingFood, gearIssues, arcUsers = 0, 0, 0, 0, 0, 0
+    local talentIssues, selfBuffIssues, stoneIssues = 0, 0, 0
 
     for i, name in ipairs(self.order) do
         local e = self.roster[name]
@@ -784,7 +888,7 @@ function ARC:Render()
         if e.ready == "ready" then ready = ready + 1 end
         if e.auraDataAvailable and not e.flask then missingFlask = missingFlask + 1 end
         if e.auraDataAvailable and not e.food then missingFood = missingFood + 1 end
-        if e.gear and e.gear.issueCount and e.gear.issueCount > 0 then gearIssues = gearIssues + 1 end
+        if e.gear and e.gear.scanned and e.gear.issueCount and e.gear.issueCount > 0 then gearIssues = gearIssues + 1 end
         if e.hasARC then arcUsers = arcUsers + 1 end
 
         SetReadyIcon(row.ready, e.ready)
@@ -832,15 +936,26 @@ function ARC:Render()
         end
 
         row.gear:SetText(FormatGear(e))
-        if e.gear and e.gear.issueCount == 0 then
+        if e.gear and e.gear.auditComplete and e.gear.issueCount == 0 then
             row.gear:SetTextColor(0.2, 1, 0.2)
-        elseif e.gear and e.gear.issueCount and e.gear.issueCount > 0 then
+        elseif e.gear and e.gear.scanned and e.gear.issueCount and e.gear.issueCount > 0 then
             row.gear:SetTextColor(1, 0.25, 0.25)
+        elseif e.gear and e.gear.scanned then
+            row.gear:SetTextColor(1, 0.78, 0.2)
         else
             row.gear:SetTextColor(0.6, 0.6, 0.6)
         end
 
         row.arc:SetText(e.hasARC and "Yes" or "-")
+        local talText, talTone = self:GetTalentStatus(e)
+        local buffText, buffTone = self:GetSelfBuffStatus(e)
+        local stoneText, stoneTone = self:GetHealthstoneStatus(e)
+        ReadinessCell(row.tal, talText, talTone)
+        ReadinessCell(row.selfBuff, buffText, buffTone)
+        ReadinessCell(row.hs, stoneText, stoneTone)
+        if talTone == "bad" then talentIssues = talentIssues + 1 end
+        if buffTone == "bad" then selfBuffIssues = selfBuffIssues + 1 end
+        if stoneTone == "bad" then stoneIssues = stoneIssues + 1 end
         row.arc:SetTextColor(e.hasARC and 0.2 or 0.5, e.hasARC and 1 or 0.5, e.hasARC and 0.7 or 0.5)
         ApplyRowVisualState(row, e, i)
     end
@@ -850,8 +965,8 @@ function ARC:Render()
     end
 
     f.summary:SetText(string.format(
-        "|cff55ff55Ready: %d/%d|r  |cffff8888Flask: %d|r  |cffff8888Food: %d|r  |cffff8888Gear: %d|r  |cff55ffbbARC: %d/%d|r",
-        ready, total, missingFlask, missingFood, gearIssues, arcUsers, total
+        "|cff55ff55Ready: %d/%d|r  |cffff8888Flask: %d  Food: %d  Gear: %d  Talents: %d  Self: %d  HS: %d|r  |cff55ffbbARC: %d/%d|r",
+        ready, total, missingFlask, missingFood, gearIssues, talentIssues, selfBuffIssues, stoneIssues, arcUsers, total
     ))
 
     local newHeight = TOP_OFFSET + FOOTER_HEIGHT + math.max(#self.order, 1) * ROW_HEIGHT

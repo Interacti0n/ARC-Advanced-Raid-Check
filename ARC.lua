@@ -6,6 +6,25 @@ local RefreshUnitPublicData = I.RefreshUnitPublicData
 local HandleCommMessage = I.HandleCommMessage
 local SetFrameShown = I.SetFrameShown
 
+-- A MoP /reload can reuse the TOC cached at client startup. After an update
+-- that adds a file, the old modules can reload without the new player check.
+-- Keep the raid UI working, but make the unavailable feature explicit.
+local playerCheckWarningShown = false
+local function HasPlayerCheck(notify, repeatWarning)
+    if type(ARC.AttachInspectCheckButton) == "function" and
+        type(ARC.ShowPlayerCheck) == "function" and
+        type(ARC.UpdatePlayerCheck) == "function" then
+        return true
+    end
+    if notify and (repeatWarning or not playerCheckWarningShown) then
+        playerCheckWarningShown = true
+        print("|cffffcc00ARC:|r Player check module is not loaded (ARC_PlayerCheck.lua). " ..
+            "Fully exit WoW and start it again; /reload is not enough after adding addon files. " ..
+            "If this persists, reinstall the complete ARC update and check earlier Lua errors.")
+    end
+    return false
+end
+
 --=============================================================================
 -- EVENT HANDLING
 --=============================================================================
@@ -20,6 +39,16 @@ eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("UNIT_AURA")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
+eventFrame:RegisterEvent("ACTIVE_TALENT_GROUP_CHANGED")
+eventFrame:RegisterEvent("PLAYER_LEVEL_UP")
+eventFrame:RegisterEvent("UNIT_PET")
+eventFrame:RegisterEvent("PET_BAR_UPDATE")
+eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
+eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
+eventFrame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
+eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
 eventFrame:RegisterEvent("PLAYER_ALIVE")
 eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
 eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- combat start = the pull
@@ -42,6 +71,11 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             -- handler instead of silently removing the affected UI.
             ARC:CreateMinimapButton()
             ARC:CreateOptionsPanel()
+            ARC:InitInspectHooks()
+            if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
+            if ARC.InitPlayerCheckMenu then ARC:InitPlayerCheckMenu() end
+        elseif addon == "Blizzard_InspectUI" then
+            if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
         elseif addon == "ElvUI" then
             -- Covers the case where ARC's frame already exists and ElvUI
             -- only finishes loading afterward.
@@ -53,10 +87,15 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Second chance at ElvUI skinning: some ElvUI forks finish their
         -- own module setup slightly after ADDON_LOADED fires for them.
         ARC:TrySkinElvUI()
+        if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
+        if ARC.InitPlayerCheckMenu then ARC:InitPlayerCheckMenu() end
 
     elseif event == "READY_CHECK" then
-        local initiator = ...
+        local initiator, duration = ...
         ARC.readyCheckActive    = true
+        ARC.readyCheckResponded = false
+        duration = tonumber(duration)
+        ARC.readyCheckExpiresAt = duration and duration > 0 and (GetTime() + duration) or nil
         ARC.readyCheckFinished  = false
         ARC.readyCheckInitiator = initiator
         -- Start every entry fresh so old X/check icons from a previous
@@ -64,10 +103,16 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         for _, e in pairs(ARC.roster) do
             e.ready = nil
         end
-        ARC:Show()
+        if ARC_DB.manualMode then
+            ARC:RefreshRoster()
+            if ARC:IsVisible() then ARC:Render() end
+        else
+            ARC:Show()
+        end
 
     elseif event == "READY_CHECK_CONFIRM" then
         local unit = ...
+        if unit and UnitIsUnit(unit, "player") then ARC.readyCheckResponded = true end
         RefreshUnitPublicData(unit)
         ARC:Render()
 
@@ -113,7 +158,27 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_SPECIALIZATION_CHANGED" then
         local unit = ...
-        if unit == "player" then ARC.selfDirty = true end
+        if unit == "player" then ARC.selfDirty = true; ARC.forceSelfGearScan = true end
+        if unit and UnitExists(unit) then
+            local key = I.GetUnitIdentity(unit)
+            local e = key and ARC.roster[key]
+            if e then e.talents, e.lastGearScan, e.specID, e.specSource, e.sacrifice = nil, nil, nil, nil, nil end
+        end
+
+    elseif event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "PLAYER_LEVEL_UP" then
+        ARC.selfDirty = true
+        if event == "ACTIVE_TALENT_GROUP_CHANGED" then ARC.forceSelfGearScan = true end
+
+    elseif event == "PET_BAR_UPDATE" or event == "BAG_UPDATE" or event == "UPDATE_SHAPESHIFT_FORM" then
+        ARC.selfDirty = true
+
+    elseif event == "UNIT_PET" then
+        local unit = ...
+        if unit and UnitIsUnit(unit, "player") then ARC.selfDirty = true end
+        if ARC:IsVisible() then ARC:RefreshRoster(); ARC:Render() end
+
+    elseif event == "PARTY_LOOT_METHOD_CHANGED" or event == "PLAYER_DIFFICULTY_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
+        if ARC:IsVisible() then ARC:Render() end
 
     elseif event == "CHAT_MSG_ADDON" then
         local prefix, msg, _, sender = ...
@@ -133,6 +198,9 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if elapsedAccum < ARC.REFRESH_EVERY then return end
     elapsedAccum = 0
 
+    -- Weapon imbues do not reliably generate UNIT_AURA. Refresh our readiness
+    -- report even with the window closed; expiry bounds remote imbue trust.
+    if (IsInGroup() or IsInRaid()) and GetTime() - ARC.lastSelfBroadcast >= 15 then ARC.selfDirty = true end
     if ARC.selfDirty then
         RefreshUnitPublicData("player")
         ARC:BroadcastSelf(false)
@@ -145,6 +213,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     ARC.TryNextInspect()
+    if HasPlayerCheck(false) then ARC:UpdatePlayerCheck() end
 end)
 
 --=============================================================================
@@ -161,6 +230,8 @@ SlashCmdList["ARC"] = function(rawMsg)
 
     if msg == "" then
         ARC:Toggle()
+    elseif msg == "raid" then
+        ARC:OpenRaidOptions()
     elseif msg == "lock" then
         ARC_DB.locked = true
         print("|cff33ff99ARC:|r window locked.")
@@ -177,6 +248,16 @@ SlashCmdList["ARC"] = function(rawMsg)
     elseif msg == "autohide" then
         ARC_DB.autoHide = not ARC_DB.autoHide
         print("|cff33ff99ARC:|r auto-hide on pull is now " .. (ARC_DB.autoHide and "ON" or "OFF") .. ".")
+    elseif msg == "manual" or msg:match("^manual%s") then
+        local value = msg:match("^manual%s+(.+)$")
+        if value and value ~= "on" and value ~= "off" then
+            print("|cff33ff99ARC:|r Usage: /arc manual [on|off]")
+            return
+        end
+        local enabled = not ARC_DB.manualMode
+        if value then enabled = value == "on" end
+        ARC:SetManualMode(enabled)
+        print("|cff33ff99ARC:|r manual opening mode is " .. (enabled and "ON" or "OFF") .. ".")
     elseif msg == "minimap" then
         ARC_DB.minimap.hide = not ARC_DB.minimap.hide
         if ARC.minimapButton then
@@ -185,6 +266,8 @@ SlashCmdList["ARC"] = function(rawMsg)
         print("|cff33ff99ARC:|r minimap button is now " .. (ARC_DB.minimap.hide and "OFF" or "ON") .. ".")
     elseif msg == "options" or msg == "config" then
         ARC:OpenOptions()
+    elseif msg == "check" then
+        if HasPlayerCheck(true, true) then ARC:ShowPlayerCheck("target") end
     elseif msg == "help" then
         print("|cff33ff99ARC commands:|r")
         print("  /arc            - show/hide the window")
@@ -192,9 +275,19 @@ SlashCmdList["ARC"] = function(rawMsg)
         print("  /arc unlock     - unlock window position")
         print("  /arc reset      - reset window position")
         print("  /arc autohide   - toggle auto-hide when you enter combat (pull)")
+        print("  /arc manual [on|off] - toggle or set manual-only window opening")
         print("  /arc minimap    - toggle the minimap button")
         print("  /arc options    - open the options panel")
-        print("  Right-click a player row for Whisper / Inspect / Remind.")
+        print("  /arc check      - player overview and PvE gear problems (no group required)")
+        print("  Right-click a player portrait or ARC row for ARC Check.")
+        print("  /arc raid - expected raid mode/size and loot method; also click the setup banner.")
+        print("  Talents = empty available talents; Self = missing class buffs. ? means unverified.")
+        print("  Self also checks tank stances/RF and pets/Sacrifice/Growl. HS = reported Healthstone uses; ? = unknown.")
+        print("  ARC rows also offer Whisper / Inspect / Remind.")
+        print("  Ready / Not Ready at the top answer your active ready check.")
+        print("  Minimum item level: type 400-600 in Options; save with Enter or Apply.")
+        print("  Gear checks: MoP rare+ gems, enchant tier, primary stats and PvP bonuses.")
+        print("  Yellow Unverified / ? means unknown data, not a passed gear check.")
     else
         print("|cff33ff99ARC:|r unknown command. Try /arc help")
     end
