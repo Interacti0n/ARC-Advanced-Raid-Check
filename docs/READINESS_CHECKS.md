@@ -1,4 +1,4 @@
-# Raid setup, talents, class/tank/pet checks and Healthstones
+# Advanced Raid Check: raid setup, talents, class/tank/pet checks and Healthstones
 
 These checks are implemented in the existing Core/UI/Options/Inspect modules.
 No new TOC module, external library or automatic raid-setting changes are needed.

@@ -718,7 +718,7 @@ local function BuildMainFrame()
     title:SetPoint("TOPLEFT", 12, -12)
     title:SetWidth(430)
     title:SetJustifyH("LEFT")
-    title:SetText("ARC - Ready Check Overview")
+    title:SetText("ARC - " .. ARC.NAME)
     f.title = title
 
     local close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
@@ -832,7 +832,7 @@ end
 local function UpdateTitleText()
     local f = ARC.frame
     if not f or not f.title then return end
-    local text = "ARC - Ready Check Overview"
+    local text = "ARC - " .. ARC.NAME
     if ARC.readyCheckActive then
         local left = GetReadyCheckSecondsLeft()
         if left == nil then

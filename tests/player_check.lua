@@ -229,6 +229,8 @@ for _, file in ipairs(files) do
     end
 end
 assert(ARC.VERSION == tocVersion, "Core and TOC versions must agree")
+assert(ARC.NAME == "Advanced Raid Check" and tocText:find(ARC.NAME, 1, true), "Core and TOC display names must agree")
+assert(tocText:find("## SavedVariables: ARC_DB", 1, true) and ARC.COMM_PREFIX == "ARC1", "Rename must preserve saved settings and wire compatibility")
 local originalPrint, warnings = print, {}
 if staleTOC then print = function(message) warnings[#warnings + 1] = message end end
 ARCEventFrame.scripts.OnEvent(ARCEventFrame, "ADDON_LOADED", "ARC")
@@ -1664,6 +1666,25 @@ test("Talents label and row tooltip omit the old glyph parenthesis", function()
         if label:GetText() == "Talents" then foundHeader = true; assert(label.width == 60) end
     end
     assert(foundHeader)
+    ARC:Hide(); GameTooltip:Hide()
+end)
+test("raid branding preserves slash commands, minimap actions, settings and countdown", function()
+    start()
+    local db = ARC_DB
+    ARC.readyCheckActive, ARC.readyCheckFinished = false, false
+    ARC:Show()
+    assert(ARC.frame.title:GetText() == "ARC - Advanced Raid Check")
+    assert(SLASH_ARC1 == "/arc" and ARC_DB == db)
+    GameTooltip:ClearLines()
+    ARC.minimapButton.scripts.OnEnter(ARC.minimapButton)
+    assert(GameTooltip.tooltipLines[1] == "ARC - Advanced Raid Check")
+    ARC.readyCheckActive, ARC.readyCheckExpiresAt, readyTimeLeft = true, now + 13, 13
+    ARC:Render()
+    assert(ARC.frame.title:GetText() == "ARC - Advanced Raid Check (13 seconds remaining)")
+    ARC.readyCheckActive, ARC.readyCheckFinished = false, true
+    ARC:Render()
+    assert(ARC.frame.title:GetText() == "ARC - Advanced Raid Check (Finished)")
+    ARC.readyCheckFinished, readyTimeLeft = false, 30
     ARC:Hide(); GameTooltip:Hide()
 end)
 print("Passed " .. passed .. " ARC regression tests")

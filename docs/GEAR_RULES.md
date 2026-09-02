@@ -1,4 +1,4 @@
-# ARC MoP PvE gear policy
+# ARC — Advanced Raid Check: MoP PvE gear policy
 
 The raid tooltip and standalone player check call the same analyzer in
 `ARC_Gear.lua`. This is a conservative raid-policy check, not a simulation or

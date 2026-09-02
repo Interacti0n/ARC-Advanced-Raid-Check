@@ -1,8 +1,10 @@
-# ARC 1.5.0 release checklist
+# ARC — Advanced Raid Check 1.5.0 release checklist
 
 1. Keep `ARC.toc`, `ARC.VERSION`, README and the newest changelog entry aligned
    at **1.5.0**. Review the complete working tree: this candidate contains all
    changes since 1.4.0, including the new `ARC_PlayerCheck.lua` module.
+   Verify the Advanced Raid Check display name. Keep the installation folder
+   `ARC`, saved variables `ARC_DB`, slash commands and `ARC1` prefix unchanged.
 2. Run both suites in [tests/README.md](../tests/README.md), parse every Lua file
    as Lua 5.1, and run `git diff --check`. Confirm the final **Passed** line;
    some developer Lua runners do not propagate assertion failures as exit codes.
@@ -26,7 +28,7 @@ Do not label the version verified on the server until the live checklist passes.
 
 ## Local preflight — 2026-09-02
 
-- 105 mocked ARC regression tests passed, including problem-item icon/tooltips.
+- 106 mocked ARC regression tests passed, including item tooltips and rename compatibility.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.
 - All seven addon Lua modules and the test harness parsed as Lua 5.1.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.

@@ -1,4 +1,7 @@
 v1.5.0 CHANGES
+  - Renamed the addon to Advanced Raid Check across metadata, window/options
+    titles, minimap tooltip and documentation. The ARC folder, /arc commands,
+    ARC_DB settings and ARC1 communication prefix remain unchanged; no migration.
   - Expanded Tal to Talents in the roster, summary and help, widened its column,
     and removed the available-tiers/no-glyph parenthesis from the row tooltip.
   - Added actual item icons before problem-item names in the standalone check.
@@ -173,9 +176,8 @@ v1.1.0 CHANGES
   - Mouseover tooltip now shows the EXACT flask/food buff text (e.g. the
     real "+300 Intellect and 300 Stamina" line), scanned live off a hidden
     tooltip only when you hover a row (no extra per-second overhead).
-  - Window title shows a live ready-check countdown, e.g.
-    "ARC - Ready Check Overview (13 seconds remaining)", and switches to
-    "(Finished)" once the check ends.
+  - Window title shows a live ready-check countdown, such as
+    "(13 seconds remaining)", and switches to "(Finished)" once the check ends.
   - The initiator of a ready check is forced to show the "ready" check icon
     immediately; everyone else shows "?" (waiting) until they respond, and
     anyone still unanswered when the check ends is locked to the "X"

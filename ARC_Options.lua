@@ -94,7 +94,7 @@ function ARC:CreateMinimapButton()
 
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-        GameTooltip:AddLine("ARC - Advanced Ready Check")
+        GameTooltip:AddLine("ARC - " .. ARC.NAME)
         GameTooltip:AddLine("Left-click: show/hide window", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Right-click: options", 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Drag: move this button", 0.8, 0.8, 0.8)
@@ -134,7 +134,7 @@ function ARC:CreateOptionsPanel()
 
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("ARC - Advanced Ready Check")
+    title:SetText("ARC - " .. ARC.NAME)
 
     local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)

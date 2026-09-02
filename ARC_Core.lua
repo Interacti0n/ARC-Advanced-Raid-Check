@@ -1,5 +1,5 @@
 --[[===========================================================================
-ARC - Advanced Ready Check
+ARC - Advanced Raid Check
 World of Warcraft: Mists of Pandaria (client 5.4.8, Interface 50400)
 
 WHAT THIS ADDON DOES
@@ -76,6 +76,7 @@ local ARC = {}
 _G.ARC = ARC
 
 ARC.VERSION       = "1.5.0"
+ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
 ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often than this

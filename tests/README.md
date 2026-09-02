@@ -1,4 +1,4 @@
-# ARC regression tests
+# ARC — Advanced Raid Check regression tests
 
 Run from the addon root with Lua 5.1 or later:
 
@@ -22,6 +22,7 @@ TOC. The script loads the actual ARC modules in `ARC.toc` order against strict,
 mocked WoW APIs, verifies the player-check entry and checks version agreement.
 It checks:
 
+- consistent Advanced Raid Check branding, unchanged settings/slash/prefix and countdown;
 - compact inspect-header button anchors, long-title space, reopening and title-widget fallbacks;
 - full Talents label/column width and the simplified talent tooltip;
 - problem-item icons, captured full-link tooltips, target changes and no hover inspect requests;

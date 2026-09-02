@@ -1,6 +1,6 @@
-# ARC — Advanced Ready Check
+# ARC — Advanced Raid Check
 
-ARC is a lightweight ready-check overview for World of Warcraft: Mists of
+ARC is a lightweight raid-preparation and ready-check addon for World of Warcraft: Mists of
 Pandaria 5.4.8 (`Interface 50400`). It shows the group roster together with
 ready status, role, specialization, consumables, raid buffs, upgrade-aware item
 level, durability, missing gems/enchants, MoP PvE gem/enchant checks, empty
@@ -8,6 +8,14 @@ talent tiers, class buffs, tank stances, pets and reported Healthstone uses.
 A visible raid-setup banner warns
 about unexpected raid mode/size or loot settings.
 The roster also identifies who is running ARC and which version they report.
+
+Version 1.5.0 uses the name **Advanced Raid Check**, reflecting the broader raid,
+gear and player-readiness checks. This is a display-name change: keep the addon
+folder named `ARC`. `ARC.toc`, `/arc`, `ARC_DB`, frame identifiers and the `ARC1`
+communication prefix remain unchanged. Existing settings, enabled-addon state
+and compatible group reports do not need migration. Install over the same `ARC`
+folder; do not keep a second renamed copy. Ready-check buttons, game events and
+API names still refer to the game's ready-check feature, not the product name.
 
 Roster row states are color coded:
 

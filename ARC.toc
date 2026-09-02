@@ -1,5 +1,5 @@
 ## Interface: 50400
-## Title: ARC |cff33ff99(Advanced Ready Check)|r
+## Title: ARC |cff33ff99(Advanced Raid Check)|r
 ## Notes: Raid readiness: gear, consumables, talents, class buffs, tank stances, pets, Healthstones and raid setup; standalone player checks.
 ## Author: Interacti0n
 ## Version: 1.5.0
