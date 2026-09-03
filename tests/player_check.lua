@@ -1840,6 +1840,12 @@ test("raid sessions track attendance, exact AFK flags, strict trash inactivity a
         ARC:ShowSessionReport()
         assert(ARC.sessionFrame:IsShown() and ARC.sessionFrame.text:GetText():find("ARC RAID SESSION REPORT", 1, true))
         ARC.sessionFrame:Hide()
+        ARC.sessionFrame.text.GetStringHeight = false
+        ARC_DB.sessions = {}
+        ARC:ShowSessionReport()
+        assert(ARC.sessionFrame.text:GetText() == "No raid session recorded yet.")
+        assert(ARC.sessionFrame.text.height == 450)
+        ARC.sessionFrame:Hide()
     end)
     units.party1, alice.afk = nil, nil
     ARC_DB.sessions = {}

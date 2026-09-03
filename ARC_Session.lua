@@ -432,6 +432,16 @@ local function BuildSessionFrame()
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     scroll:SetScrollChild(edit)
     frame.text = edit
+    -- MoP 5.4.8 EditBox has no GetStringHeight method. Measure the report
+    -- through a transparent FontString instead; it uses the same width/font
+    -- and keeps the EditBox tall enough for the scroll frame.
+    local measure = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    measure:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -48)
+    measure:SetWidth(650)
+    measure:SetJustifyH("LEFT")
+    measure:SetWordWrap(true)
+    measure:SetAlpha(0)
+    frame.textMeasure = measure
     frame.toggle = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.toggle:SetSize(130, 22)
     frame.toggle:SetPoint("BOTTOMLEFT", 18, 18)
@@ -500,9 +510,18 @@ end
 function ARC:RefreshSessionReport(session)
     local frame = self.sessionFrame
     if not frame then return end
-    frame.text:SetText(self:GetSessionReportText(session or self:GetReportSession(frame.historyOffset)))
+    local reportText = self:GetSessionReportText(session or self:GetReportSession(frame.historyOffset))
+    frame.text:SetText(reportText)
     frame.text:SetCursorPosition(0)
-    frame.text:SetHeight(math.max(450, frame.text:GetStringHeight() + 20))
+    local measuredHeight = 0
+    if frame.textMeasure then
+        frame.textMeasure:SetText(reportText)
+        if frame.textMeasure.GetStringHeight then
+            local ok, height = pcall(frame.textMeasure.GetStringHeight, frame.textMeasure)
+            if ok and type(height) == "number" then measuredHeight = height end
+        end
+    end
+    frame.text:SetHeight(math.max(450, measuredHeight + 20))
     frame.toggle:SetText(self:IsSessionActive() and "End Session" or "Start Session")
     local offset = frame.historyOffset or 0
     if offset > 0 then frame.next:Enable() else frame.next:Disable() end
