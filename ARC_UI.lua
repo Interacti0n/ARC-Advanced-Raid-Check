@@ -702,9 +702,14 @@ function ARC:TrySkinElvUI()
     if f.closeButton and S and S.HandleCloseButton then
         pcall(S.HandleCloseButton, S, f.closeButton)
     end
-    for _, button in ipairs({ f.announce, f.readyYes, f.readyNo }) do
+    for _, button in ipairs({ f.announce, f.sessionButton, f.readyYes, f.readyNo }) do
         if S and S.HandleButton then pcall(S.HandleButton, S, button) end
         if button.GetFontString then ApplyElvUIFont(button:GetFontString(), E, 11) end
+    end
+    if f.rosterScroll and S and S.HandleScrollBar then
+        local scrollName = f.rosterScroll:GetName()
+        local bar = scrollName and _G[scrollName .. "ScrollBar"]
+        if bar then pcall(S.HandleScrollBar, S, bar) end
     end
 
     for _, row in ipairs(f.rows or {}) do

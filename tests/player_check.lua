@@ -483,7 +483,11 @@ test("standalone and ElvUI widget branches both load", function()
     methods.SetTemplate = function(self, template) self.appliedTemplate = template end
     methods.FontTemplate = function(self, font, size) self.appliedFont = font end
     methods.CreateBackdrop = function(self) self.backdrop = CreateFrame("Frame", nil, self.parent) end
-    local S = { HandleButton = function(_, b) b.skinned = true end, HandleCloseButton = function() end, HandleScrollBar = function() end }
+    local S = {
+        HandleButton = function(_, b) b.skinned = true end,
+        HandleCloseButton = function() end,
+        HandleScrollBar = function(_, b) b.skinned = true end,
+    }
     ElvUI = { { media = { normFont = "ElvUIFont", blankTex = "blank", bordercolor = { 0, 0, 0 }, rgbvaluecolor = { 0, 1, 1 } }, GetModule = function() return S end } }
     f = start(); step(); ARC.OnInspectReady("A")
     assert(f.arcSkinned and f.appliedTemplate == "Transparent" and f.refresh.skinned)
@@ -491,6 +495,8 @@ test("standalone and ElvUI widget branches both load", function()
     ARC:Show()
     assert(ARC.frame.elvuiSkinned and ARC.frame.rows[1].elvuiSkinned)
     assert(ARC.frame.readyYes.skinned and ARC.frame.readyNo.skinned)
+    assert(ARC.frame.sessionButton.skinned)
+    assert(ARCMainRosterScrollFrameScrollBar.skinned)
 end)
 local function readyEvent(event, ...)
     ARCEventFrame.scripts.OnEvent(ARCEventFrame, event, ...)

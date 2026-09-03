@@ -5,11 +5,6 @@ Pandaria 5.4.8 (`Interface 50400`). It turns ready checks, inspection data and
 raid activity into one clear view, without changing player settings or
 answering ready checks automatically.
 
-![ARC roster mockup with dummy raid data](docs/images/arc-roster-mockup.svg)
-
-> The image is an illustrative mockup with dummy data. The exact appearance in
-> game depends on UI scale and optional ElvUI integration.
-
 ## Highlights
 
 - ready state, role, spec, consumables, raid buffs and ARC version

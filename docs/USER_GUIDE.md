@@ -136,11 +136,6 @@ AFK flags, encounter pulls/kills, first deaths, ready-check snapshots, trash
 combat and estimated trash inactivity. The newest ten completed reports are
 kept, and an active session survives `/reload`.
 
-![ARC session report mockup with dummy data](images/arc-session-report-mockup.svg)
-
-> Illustrative mockup with dummy data. Trash inactivity is an estimate, not
-> proof that a player was AFK.
-
 See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 
 ## Commands
