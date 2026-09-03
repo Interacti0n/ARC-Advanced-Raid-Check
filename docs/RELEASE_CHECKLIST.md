@@ -9,7 +9,7 @@
    as Lua 5.1, and run `git diff --check`. Confirm the final **Passed** line;
    some developer Lua runners do not propagate assertion failures as exit codes.
 3. Fully restart the original 5.4.8 WoW client. Test installation and the
-   [README checklist](../README.md#quick-verification-checklist), then the
+   [in-game checklist](TESTING.md), including the linked
    [readiness checklist](READINESS_CHECKS.md#in-game-checklist-before-release).
    For releases containing session changes, also run the
    [session checklist](SESSION_REPORT.md#live-verification-checklist).

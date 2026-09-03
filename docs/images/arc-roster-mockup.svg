@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="700" viewBox="0 0 1200 700" role="img" aria-labelledby="title desc">
+  <title id="title">ARC raid roster mockup</title>
+  <desc id="desc">Illustrative Advanced Raid Check window populated with dummy raid data.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111820"/>
+      <stop offset="1" stop-color="#080b0f"/>
+    </linearGradient>
+    <linearGradient id="head" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#17232c"/>
+      <stop offset="1" stop-color="#10171d"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#000" flood-opacity=".55"/>
+    </filter>
+    <style>
+      text { font-family: "Segoe UI", Arial, sans-serif; fill: #d9e0e5; }
+      .muted { fill: #7f909a; }
+      .tiny { font-size: 13px; }
+      .small { font-size: 15px; }
+      .body { font-size: 17px; }
+      .label { font-size: 14px; font-weight: 600; letter-spacing: .5px; }
+      .title { font-size: 25px; font-weight: 650; }
+      .ok { fill: #70d18b; }
+      .bad { fill: #ff6b6b; }
+      .warn { fill: #edc45a; }
+      .cyan { fill: #5bd0d6; }
+    </style>
+  </defs>
+  <rect width="1200" height="700" fill="url(#bg)"/>
+  <circle cx="1035" cy="85" r="180" fill="#20a7af" opacity=".055"/>
+  <circle cx="120" cy="660" r="260" fill="#20a7af" opacity=".035"/>
+  <g filter="url(#shadow)">
+    <rect x="55" y="42" width="1090" height="610" rx="5" fill="#0b1014" stroke="#31434d" stroke-width="2"/>
+    <rect x="56" y="43" width="1088" height="55" rx="4" fill="url(#head)"/>
+    <rect x="56" y="94" width="1088" height="4" fill="#24a6ad"/>
+  </g>
+
+  <rect x="77" y="58" width="25" height="25" rx="4" fill="#24a6ad"/>
+  <path d="M84 78l5-15h4l5 15h-4l-1-4h-5l-1 4zm5-7h3l-1.5-5z" fill="#071015"/>
+  <text x="115" y="80" class="title">ARC — Advanced Raid Check</text>
+  <text x="725" y="77" class="tiny muted">10-player roster · dummy data</text>
+  <rect x="903" y="57" width="87" height="27" rx="3" fill="#1d4930" stroke="#4f9f70"/>
+  <text x="946.5" y="76" text-anchor="middle" class="label ok">READY</text>
+  <rect x="998" y="57" width="112" height="27" rx="3" fill="#4b2225" stroke="#a55156"/>
+  <text x="1054" y="76" text-anchor="middle" class="label bad">NOT READY</text>
+
+  <rect x="76" y="116" width="1048" height="48" rx="3" fill="#451c20" stroke="#a5464d"/>
+  <text x="600" y="138" text-anchor="middle" class="body bad" font-weight="700">NOT READY — 3 players with confirmed issues</text>
+  <text x="600" y="155" text-anchor="middle" class="tiny warn">Raid setup OK · 10 Heroic · Master Loot</text>
+
+  <rect x="76" y="177" width="1048" height="35" rx="3" fill="#111a20" stroke="#273943"/>
+  <text x="95" y="199" class="small ok">Ready 7/10</text>
+  <text x="205" y="199" class="small bad">Flask 1</text>
+  <text x="290" y="199" class="small ok">Food 0</text>
+  <text x="370" y="199" class="small warn">Soon 1</text>
+  <text x="450" y="199" class="small bad">Gear 2</text>
+  <text x="535" y="199" class="small bad">Talents 1</text>
+  <text x="635" y="199" class="small ok">Self 0</text>
+  <text x="715" y="199" class="small bad">HS 1</text>
+  <text x="790" y="199" class="small cyan">ARC 8/10</text>
+  <text x="1098" y="199" text-anchor="end" class="small muted">Inspect 9/10</text>
+
+  <rect x="76" y="225" width="1048" height="34" fill="#172128"/>
+  <text x="94" y="247" class="label muted">PLAYER</text>
+  <text x="325" y="247" class="label muted">ROLE / SPEC</text>
+  <text x="495" y="247" class="label muted">READY</text>
+  <text x="580" y="247" class="label muted">FLASK</text>
+  <text x="655" y="247" class="label muted">FOOD</text>
+  <text x="730" y="247" class="label muted">ILVL</text>
+  <text x="805" y="247" class="label muted">GEAR</text>
+  <text x="880" y="247" class="label muted">TALENTS</text>
+  <text x="975" y="247" class="label muted">SELF</text>
+  <text x="1040" y="247" class="label muted">ARC</text>
+
+  <g class="body">
+    <rect x="76" y="260" width="1048" height="47" fill="#102019"/>
+    <circle cx="95" cy="283" r="9" fill="#c79c6e"/><text x="115" y="289">Tankadin</text>
+    <text x="325" y="289">Tank · Protection</text><text x="505" y="289" class="ok">Ready</text>
+    <text x="598" y="289" class="ok">OK</text><text x="668" y="289" class="ok">OK</text>
+    <text x="735" y="289">566</text><text x="814" y="289" class="ok">OK</text>
+    <text x="898" y="289" class="ok">OK</text><text x="980" y="289" class="ok">OK</text>
+    <text x="1042" y="289" class="cyan">1.6.0</text>
+
+    <rect x="76" y="308" width="1048" height="47" fill="#201d12"/>
+    <circle cx="95" cy="331" r="9" fill="#ffffff"/><text x="115" y="337">Healme</text>
+    <text x="325" y="337">Heal · Discipline</text><text x="505" y="337" class="ok">Ready</text>
+    <text x="598" y="337" class="ok">OK</text><text x="663" y="337" class="warn">4:12</text>
+    <text x="735" y="337">558</text><text x="814" y="337" class="ok">OK</text>
+    <text x="898" y="337" class="ok">OK</text><text x="980" y="337" class="ok">OK</text>
+    <text x="1042" y="337" class="cyan">1.6.0</text>
+
+    <rect x="76" y="356" width="1048" height="47" fill="#2b1518"/>
+    <circle cx="95" cy="379" r="9" fill="#9482c9"/><text x="115" y="385">Shadowbob</text>
+    <text x="325" y="385">DPS · Shadow</text><text x="505" y="385" class="bad">Not ready</text>
+    <text x="598" y="385" class="bad">!1</text><text x="668" y="385" class="ok">OK</text>
+    <text x="735" y="385" class="warn">447</text><text x="814" y="385" class="bad">!2</text>
+    <text x="898" y="385" class="ok">OK</text><text x="980" y="385" class="ok">OK</text>
+    <text x="1042" y="385" class="cyan">1.6.0</text>
+
+    <rect x="76" y="404" width="1048" height="47" fill="#271d12"/>
+    <circle cx="95" cy="427" r="9" fill="#69ccf0"/><text x="115" y="433">Afkmage <tspan class="warn">(afk)</tspan></text>
+    <text x="325" y="433">DPS · Fire</text><text x="505" y="433" class="warn">Waiting</text>
+    <text x="598" y="433" class="ok">OK</text><text x="668" y="433" class="ok">OK</text>
+    <text x="735" y="433">561</text><text x="814" y="433" class="ok">OK</text>
+    <text x="898" y="433" class="bad">!1</text><text x="980" y="433" class="ok">OK</text>
+    <text x="1042" y="433" class="muted">Old</text>
+
+    <rect x="76" y="452" width="1048" height="47" fill="#171b1d" opacity=".62"/>
+    <circle cx="95" cy="475" r="9" fill="#abd473"/><text x="115" y="481" fill="#8c989e">Arrowgirl <tspan class="muted">(off)</tspan></text>
+    <text x="325" y="481" class="muted">DPS · Survival</text><text x="505" y="481" class="muted">Offline</text>
+    <text x="598" y="481" class="muted">—</text><text x="668" y="481" class="muted">—</text>
+    <text x="735" y="481" class="muted">—</text><text x="814" y="481" class="muted">?</text>
+    <text x="898" y="481" class="muted">?</text><text x="980" y="481" class="muted">?</text>
+    <text x="1042" y="481" class="muted">—</text>
+
+    <rect x="76" y="500" width="1048" height="47" fill="#251718"/>
+    <circle cx="95" cy="523" r="9" fill="#c41f3b"/><text x="115" y="529">Frostbite <tspan class="bad">(dead)</tspan></text>
+    <text x="325" y="529">DPS · Frost</text><text x="505" y="529" class="bad">Dead</text>
+    <text x="598" y="529" class="ok">OK</text><text x="668" y="529" class="ok">OK</text>
+    <text x="735" y="529">563</text><text x="814" y="529" class="ok">OK</text>
+    <text x="898" y="529" class="ok">OK</text><text x="980" y="529" class="ok">OK</text>
+    <text x="1042" y="529" class="cyan">1.6.0</text>
+  </g>
+
+  <rect x="76" y="563" width="1048" height="65" fill="#10171c" stroke="#273943"/>
+  <rect x="94" y="580" width="150" height="31" rx="3" fill="#19343d" stroke="#35707c"/>
+  <text x="169" y="601" text-anchor="middle" class="label cyan">ANNOUNCE MISSING</text>
+  <rect x="256" y="580" width="145" height="31" rx="3" fill="#18242b" stroke="#3b4e58"/>
+  <text x="328.5" y="601" text-anchor="middle" class="label">SESSION REPORT</text>
+  <text x="1100" y="601" text-anchor="end" class="small muted">9 scanned · 1 unavailable</text>
+
+  <text x="600" y="682" text-anchor="middle" class="small muted">Illustrative mockup — all names and values are dummy data</text>
+</svg>
