@@ -368,6 +368,37 @@ WoW and do not replace in-game visual/API testing.
 
 Current version: **1.5.0**
 
+## Automatic release packaging
+
+The **Package ARC release** GitHub Actions workflow runs when you click
+**Publish release** (including a published prerelease, but not a saved draft).
+It tests the tagged code with Lua 5.1, verifies matching versions, and attaches
+`ARC-<version>.zip` plus its SHA-256 checksum to that release.
+
+The installation ZIP contains **only** the TOC-listed `.lua` modules, `ARC.toc`,
+`changelog.txt` and `LICENSE`, under a single `ARC/` directory. README, `docs/`,
+tests and build tooling stay in the repository. The catalog's third-party MIT
+notice is embedded in `ARC_Gear.lua` and remains in the distributed addon.
+
+Before a new release, update the version in `ARC.toc`, `ARC_Core.lua`, this README
+and the first section of `changelog.txt`, commit/push, then choose a matching tag
+such as `v1.5.1`. The tagged commit must include the workflow and `scripts/`.
+No private token or additional secret is needed; publishing uses GitHub's
+repository-scoped `GITHUB_TOKEN`. The workflow must first be pushed to GitHub.
+
+If the release description is empty, ARC fills it from that version's changelog
+and adds installation instructions. User-written or GitHub-generated descriptions
+are preserved. Existing identical assets are skipped on reruns; different assets
+with the same name are never deleted or overwritten automatically.
+
+**Actions → Package ARC release → Run workflow** runs a validation/build-only
+preflight: it does not create a release or upload assets. A release is already
+public while its packaging runs; failures leave it without a new ZIP, so confirm
+the Actions run is green before announcing it. The published 1.5.0 release is
+not changed or rebuilt retroactively by installing this workflow.
+
+See the [release checklist](docs/RELEASE_CHECKLIST.md) for the exact steps.
+
 ## License
 
 ARC is released under the [MIT License](LICENSE).

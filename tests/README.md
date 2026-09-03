@@ -1,5 +1,17 @@
 # ARC — Advanced Raid Check regression tests
 
+Release-tool tests use Python 3.10+ and its standard library:
+
+```sh
+python -B -m unittest discover -s tests -p test_release.py -v
+```
+
+They cover exact minimal ZIP contents (no README/docs/tests), version/tag
+validation, missing/unsafe manifest entries, repeatable packaging, checksums,
+changelog extraction, preserved release notes and safe asset collision/retry
+behavior. GitHub calls are mocked; these tests never upload anything. The GitHub
+Actions release workflow runs these plus both Lua suites before publishing assets.
+
 Run from the addon root with Lua 5.1 or later:
 
 ```sh
