@@ -9,8 +9,8 @@ A visible raid-setup banner warns
 about unexpected raid mode/size or loot settings.
 The roster also identifies who is running ARC and which version they report.
 
-Version 1.5.0 uses the name **Advanced Raid Check**, reflecting the broader raid,
-gear and player-readiness checks. This is a display-name change: keep the addon
+Since version 1.5.0 the addon uses the name **Advanced Raid Check**, reflecting
+the broader raid, gear and player-readiness checks. This is a display-name change: keep the addon
 folder named `ARC`. `ARC.toc`, `/arc`, `ARC_DB`, frame identifiers and the `ARC1`
 communication prefix remain unchanged. Existing settings, enabled-addon state
 and compatible group reports do not need migration. Install over the same `ARC`
@@ -21,8 +21,21 @@ Roster row states are color coded:
 
 - strongly faded — offline
 - soft red — dead or ghost
+- soft orange — AFK (also shown as `(afk)` after the name)
 - soft grey — aura/required inspect data is out of range
 - soft yellow — waiting for the first inspect result
+
+The 25-player roster scrolls and caps its height to the current screen and ARC
+scale. The footer shows inspect progress (`scanned/total`) plus waiting or
+unavailable players. Flask and food icons turn amber below five minutes, and
+the ARC column marks older clients as **Old** instead of treating every detected
+installation as current.
+
+The top banner combines the expected raid-setup check with an overall verdict:
+**READY TO PULL** only when every available check passed, **NOT READY** when one
+or more players have confirmed issues, and **CHECK INCOMPLETE** when no confirmed
+failure exists but some required data is still unavailable. Offline, dead and
+AFK players are confirmed pull blockers.
 
 Unavailable aura data is never counted as a missing flask or food and is
 skipped by reminder/announcement actions.
@@ -34,7 +47,8 @@ skipped by reminder/announcement actions.
 2. The resulting path must contain `ARC/ARC.toc` (not `ARC/ARC/ARC.toc`).
 3. Fully exit WoW to the desktop and start the client again after updating.
    On this MoP client, `/reload` can retain the old TOC/file list and miss newly
-   added modules. In particular, upgrading to 1.5.0 requires a full restart.
+   added modules. In particular, upgrading from a version older than 1.5.0
+   requires a full restart.
 4. Enable **Load out of date AddOns** only if the server reports a different
    interface number despite using a 5.4.8 client.
 
@@ -58,7 +72,9 @@ ARC never answers automatically; responding through the standard Blizzard
 dialog is still supported. After a successful ARC response that dialog closes.
 
 Hover a player row for details and right-click a row for
-Whisper, Inspect, ARC Check and Remind actions. Hover the Stam, Stat, Crit or Mast header
+Whisper, Inspect, ARC Check and Remind actions. Remind sends one private list of
+confirmed personal issues (consumables, gear, talents, class readiness and
+Healthstone); unavailable data is omitted. Hover the Stam, Stat, Crit or Mast header
 to see the detected source of that raid buff.
 
 Available commands:
@@ -73,9 +89,26 @@ Available commands:
 - `/arc options` — open the options panel
 - `/arc raid` — configure the expected raid mode/size and loot method
 - `/arc check` — open a detailed check of the targeted player (no group required)
+- `/arc session` — open the active or most recent raid-session report
+- `/arc session start` — begin attendance, pull, ready-check and activity tracking
+- `/arc session end` — finish and save the active report
 - `/arc help` — print the command list
 
 Settings are saved account-wide in `ARC_DB`.
+
+## Raid session reports
+
+Use **Session Report** in the main window or Options to start, inspect and end a
+raid session. ARC records attendance, observed AFK time, encounter pulls/kills,
+first deaths, ready-check problems, trash-combat time and estimated inactivity
+on trash. The report is selectable for copying and the newest ten completed
+sessions are retained. An active session survives `/reload`.
+
+Trash inactivity begins after **10 seconds** without recorded damage, healing,
+successful casts, interrupts or dispels during non-boss combat. When the limit
+is crossed, the initial ten seconds are included; activity resets the timer.
+This is an explicitly approximate signal, not proof that somebody was AFK.
+See [session behavior, limitations and the live checklist](docs/SESSION_REPORT.md).
 
 The options panel contains a numeric minimum item-level field (default **450**).
 Type a whole number from **400 to 600**, then press **Enter** or **Apply** to
@@ -198,7 +231,7 @@ See [readiness implementation notes and test checklist](docs/READINESS_CHECKS.md
 
 If `/arc check` reports that `ARC_PlayerCheck.lua` is not loaded, fully restart
 WoW, not just `/reload` or logout. A log showing ARC 1.4.0 in the addon list but
-`ARC.VERSION = "1.5.0"` in Lua is a sign of a cached old TOC. If a restart does
+an older `ARC.VERSION` in Lua is a sign of a cached old TOC. If a restart does
 not help, verify that `ARC_PlayerCheck.lua` is beside `ARC.toc` and listed in it
 before `ARC.lua`; reinstall the complete update and check the earliest Lua
 error. Until the module loads, ARC keeps the raid UI working and explains why
@@ -366,7 +399,7 @@ WoW and do not replace in-game visual/API testing.
 
 ## Version
 
-Current version: **1.5.0**
+Current version: **1.6.0**
 
 ## Automatic release packaging
 

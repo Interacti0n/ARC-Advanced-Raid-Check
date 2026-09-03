@@ -70,12 +70,15 @@ It checks:
 - top/weak/PvP enchants, profession options, runeforges, scopes and off-hands;
 - cold gem retries without another inspect or lost ilvl; unknown data cannot pass;
 - hunter ranged weapon ilvl weighting.
+- raid-session attendance, AFK intervals, 10-second trash inactivity with
+  retroactive threshold credit/reset, boss kills/first deaths and copyable reports.
 - stale TOC omitting the new module: one startup warning, safe world/inspect
   events and update ticks, actionable `/arc check` feedback, working raid UI,
   minimap and ready-check response buttons.
 
-The `--stale-toc` run intentionally skips `ARC_PlayerCheck.lua` to model a MoP
-client still using the old file list. It verifies defensive behavior, not
+The `--stale-toc` run intentionally skips `ARC_PlayerCheck.lua` and
+`ARC_Session.lua` to model a MoP client still using the old file list. It
+verifies defensive behavior, not
 that `/reload` can install new files. Updating to 1.5.0 needs a full restart.
 
 Passing this suite validates control flow, not Blizzard's actual network

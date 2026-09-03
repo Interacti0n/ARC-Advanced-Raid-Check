@@ -2,7 +2,7 @@
 ## Title: ARC |cff33ff99(Advanced Raid Check)|r
 ## Notes: Raid readiness: gear, consumables, talents, class buffs, tank stances, pets, Healthstones and raid setup; standalone player checks.
 ## Author: Interacti0n
-## Version: 1.5.0
+## Version: 1.6.0
 ## SavedVariables: ARC_DB
 ## OptionalDeps: ElvUI
 ## DefaultState: enabled
@@ -10,6 +10,7 @@
 ARC_Core.lua
 ARC_Gear.lua
 ARC_Inspect.lua
+ARC_Session.lua
 ARC_UI.lua
 ARC_PlayerCheck.lua
 ARC_Options.lua

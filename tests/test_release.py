@@ -85,7 +85,7 @@ class ReleaseTests(unittest.TestCase):
     def test_current_repo_package_is_minimal(self):
         version, names, _ = manifest(ROOT)
         archive = package(ROOT, self.output, "v" + version)
-        self.assertEqual(len(names), 10)  # 7 runtime Lua modules + TOC + changelog + license
+        self.assertEqual(len(names), 11)  # 8 runtime Lua modules + TOC + changelog + license
         with zipfile.ZipFile(archive) as opened:
             self.assertNotIn("ARC/README.md", opened.namelist())
             self.assertFalse(any("/docs/" in name or "/tests/" in name for name in opened.namelist()))

@@ -12,7 +12,7 @@ local ROW_HEIGHT    = 26   -- was 22 - main fix for rows crowding/overlapping
 local HEADER_HEIGHT = 26
 local FOOTER_HEIGHT = 34
 local TOP_OFFSET    = 162  -- ready responses, visible raid setup banner, summary, labels
-local FRAME_WIDTH   = 850
+local FRAME_WIDTH   = 872  -- includes room for the roster scrollbar
 local ICON_MISSING  = "Interface\\RaidFrame\\ReadyCheck-NotReady"
 local ICON_BLANK    = "Interface\\Buttons\\UI-Quickslot2"
 
@@ -196,6 +196,7 @@ local function SetReadyIcon(tex, status)
 end
 
 local function SetPresenceIcon(tex, present, icon)
+    tex:SetVertexColor(1, 1, 1, 1)
     if tex.backdrop then tex.backdrop:Show() end
     if present and icon then
         tex:SetTexture(icon)
@@ -211,6 +212,7 @@ local function SetPresenceIcon(tex, present, icon)
 end
 
 local function SetUnknownPresenceIcon(tex)
+    tex:SetVertexColor(1, 1, 1, 1)
     if tex.backdrop then tex.backdrop:Show() end
     tex:SetTexture(ICON_BLANK)
     tex:SetTexCoord(0, 1, 0, 1)
@@ -218,9 +220,28 @@ local function SetUnknownPresenceIcon(tex)
     tex:SetAlpha(0.35)
 end
 
+local function SetConsumableIcon(tex, entry, key)
+    local status = ARC:GetConsumableStatus(entry, key)
+    if status == "unknown" then
+        SetUnknownPresenceIcon(tex)
+    elseif status == "missing" then
+        SetPresenceIcon(tex, false)
+    else
+        SetPresenceIcon(tex, true, entry[key .. "Icon"])
+        if status == "expiring" then tex:SetVertexColor(1, 0.72, 0.12, 1) end
+    end
+end
+
+local function FormatRemaining(seconds)
+    seconds = math.max(0, math.floor((seconds or 0) + 0.5))
+    if seconds >= 60 then return math.floor(seconds / 60) .. "m" end
+    return seconds .. "s"
+end
+
 local function GetEntryVisualState(e)
     if e.online == false then return "offline" end
     if e.dead then return "dead" end
+    if e.afk then return "afk" end
     if not e.auraDataAvailable or ((not e.gear or not e.gear.scanned) and e.inspectable == false) then
         return "range"
     end
@@ -237,6 +258,9 @@ local function ApplyRowVisualState(row, e, index)
     elseif state == "dead" then
         row.bg:SetVertexColor(0.9, 0.08, 0.08, 0.22)
         row:SetAlpha(0.88)
+    elseif state == "afk" then
+        row.bg:SetVertexColor(1, 0.48, 0.05, 0.2)
+        row:SetAlpha(0.9)
     elseif state == "range" then
         row.bg:SetVertexColor(0.55, 0.55, 0.55, 0.13)
         row:SetAlpha(0.68)
@@ -288,24 +312,36 @@ end
 -- RIGHT-CLICK CONTEXT MENU (Whisper / Inspect / Remind)
 --=============================================================================
 
--- Sends a friendly whisper listing only what a player can personally fix
--- (flask/food) - deliberately not the raid-buff categories, since those
--- aren't something an individual player controls by using an item.
+function ARC:GetConfirmedIssueTags(e)
+    local tags = {}
+    local flaskStatus, flaskLeft = self:GetConsumableStatus(e, "flask")
+    local foodStatus, foodLeft = self:GetConsumableStatus(e, "food")
+    if flaskStatus == "missing" then tags[#tags + 1] = "flask"
+    elseif flaskStatus == "expiring" then tags[#tags + 1] = "flask <" .. FormatRemaining(flaskLeft) end
+    if foodStatus == "missing" then tags[#tags + 1] = "food"
+    elseif foodStatus == "expiring" then tags[#tags + 1] = "food <" .. FormatRemaining(foodLeft) end
+    if e.gear and e.gear.scanned and (e.gear.issueCount or 0) > 0 then
+        tags[#tags + 1] = "gear (" .. e.gear.issueCount .. " issue" .. (e.gear.issueCount == 1 and "" or "s") .. ")"
+    end
+    if select(2, self:GetTalentStatus(e)) == "bad" then tags[#tags + 1] = "talents" end
+    if select(2, self:GetSelfBuffStatus(e)) == "bad" then tags[#tags + 1] = "class readiness" end
+    if select(2, self:GetHealthstoneStatus(e)) == "bad" then tags[#tags + 1] = "Healthstone" end
+    return tags
+end
+
+-- Sends one private, concise list containing confirmed personal issues only.
 function ARC:RemindPlayer(e)
     if not e or not e.name then return end
-    if e.online == false or not e.auraDataAvailable then
-        print("|cff33ff99ARC:|r Cannot verify " .. e.name .. " while their aura data is unavailable.")
+    if e.online == false then
+        print("|cff33ff99ARC:|r Cannot remind " .. e.name .. " while they are offline.")
         return
     end
-    local missing = {}
-    if not e.flask then missing[#missing + 1] = "flask" end
-    if not e.food then missing[#missing + 1] = "food" end
-    if #missing == 0 then
-        print("|cff33ff99ARC:|r " .. e.name .. " already has flask and food.")
+    local issues = self:GetConfirmedIssueTags(e)
+    if #issues == 0 then
+        print("|cff33ff99ARC:|r No confirmed personal issues for " .. e.name .. ".")
         return
     end
-    local msg = "Hey, quick heads up from ARC - you're missing " ..
-        table.concat(missing, " and ") .. ". Might want to grab that before we pull!"
+    local msg = "ARC reminder: " .. table.concat(issues, ", ") .. ". Please fix before pull."
     SendChatMessage(msg, "WHISPER", nil, e.fullName or e.name)
     print("|cff33ff99ARC:|r Reminder sent to " .. e.name .. ".")
 end
@@ -333,7 +369,7 @@ local function BuildPlayerMenu(e)
         local checkItem = ARC.CreatePlayerCheckMenuItem and ARC:CreatePlayerCheckMenuItem(e.unit, e.fullName)
         if checkItem then menu[#menu + 1] = checkItem end
         menu[#menu + 1] = {
-            text = "Remind (missing consumables)",
+            text = "Remind (confirmed issues)",
             notCheckable = true,
             func = function() ARC:RemindPlayer(e) end,
         }
@@ -439,6 +475,8 @@ local function CreateRow(parent, index)
             GameTooltip:AddLine("Status: Offline", 0.55, 0.55, 0.55)
         elseif visualState == "dead" then
             GameTooltip:AddLine("Status: Dead or ghost", 1, 0.25, 0.25)
+        elseif visualState == "afk" then
+            GameTooltip:AddLine("Status: AFK", 1, 0.58, 0.18)
         elseif visualState == "range" then
             GameTooltip:AddLine("Status: Aura/inspect data out of range", 0.7, 0.7, 0.7)
         elseif visualState == "waiting" then
@@ -454,6 +492,14 @@ local function CreateRow(parent, index)
         end
         if e.hasARC then
             GameTooltip:AddLine("ARC installed" .. (e.arcVersion and (" - version " .. e.arcVersion) or ""), 0.2, 1, 0.7)
+            local versionState = ARC:CompareVersions(e.arcVersion, ARC.VERSION)
+            if versionState == -1 then
+                GameTooltip:AddLine("Outdated ARC: update to " .. ARC.VERSION, 1, 0.3, 0.2)
+            elseif versionState == 1 then
+                GameTooltip:AddLine("Newer than this ARC client", 0.3, 0.8, 1)
+            elseif versionState == nil then
+                GameTooltip:AddLine("Version could not be compared", 1, 0.78, 0.2)
+            end
         else
             GameTooltip:AddLine("ARC not detected", 0.55, 0.55, 0.55)
         end
@@ -464,11 +510,21 @@ local function CreateRow(parent, index)
                 local detail = GetBuffTooltipDetail(e.unit, flaskName)
                 GameTooltip:AddLine(flaskName .. (detail and (" - " .. detail) or ""), 0.6, 0.9, 1)
             end
+            local status, remaining = ARC:GetConsumableStatus(e, "flask")
+            if remaining then
+                GameTooltip:AddLine("Flask remaining: " .. FormatRemaining(remaining), status == "expiring" and 1 or 0.7,
+                    status == "expiring" and 0.65 or 0.9, status == "expiring" and 0.15 or 0.7)
+            end
         end
         if e.food then
             local foodName = e.foodName
             local detail = foodName and GetBuffTooltipDetail(e.unit, foodName)
             GameTooltip:AddLine("Food: " .. (detail or foodName or "Well Fed"), 1, 0.82, 0)
+            local status, remaining = ARC:GetConsumableStatus(e, "food")
+            if remaining then
+                GameTooltip:AddLine("Food remaining: " .. FormatRemaining(remaining), status == "expiring" and 1 or 0.7,
+                    status == "expiring" and 0.65 or 0.9, status == "expiring" and 0.15 or 0.7)
+            end
         end
 
         local raidBuffs = {}
@@ -760,10 +816,14 @@ local function BuildMainFrame()
     summary:SetJustifyH("LEFT")
     f.summary = summary
 
-    local scroll = CreateFrame("Frame", nil, f)
+    local scroll = CreateFrame("ScrollFrame", "ARCMainRosterScrollFrame", f, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 8, -TOP_OFFSET)
-    scroll:SetPoint("TOPRIGHT", -8, -TOP_OFFSET)
-    f.rowsContainer = scroll
+    scroll:SetPoint("BOTTOMRIGHT", -28, FOOTER_HEIGHT)
+    local rowsContainer = CreateFrame("Frame", nil, scroll)
+    rowsContainer:SetSize(FRAME_WIDTH - 36, ROW_HEIGHT)
+    scroll:SetScrollChild(rowsContainer)
+    f.rosterScroll = scroll
+    f.rowsContainer = rowsContainer
 
     f.header = CreateHeader(f)
     f.header:SetPoint("TOPLEFT", 8, -132)
@@ -774,9 +834,17 @@ local function BuildMainFrame()
     f.announce:SetText("Announce Missing")
     f.announce:SetScript("OnClick", function() ARC:AnnounceMissing() end)
 
+    f.sessionButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
+    f.sessionButton:SetSize(130, 20)
+    f.sessionButton:SetPoint("LEFT", f.announce, "RIGHT", 8, 0)
+    f.sessionButton:SetText("Session Report")
+    f.sessionButton:SetScript("OnClick", function()
+        if ARC.ShowSessionReport then ARC:ShowSessionReport() end
+    end)
+
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOMRIGHT", -10, 10)
-    hint:SetText("/arc for help")
+    hint:SetText("Inspect: 0/0  |  /arc help")
     f.hint = hint
 
     f.rows = {}
@@ -824,6 +892,8 @@ local function FormatPlayerName(e, fallbackName)
         return name .. " (off)"
     elseif e.dead then
         return name .. " (dead)"
+    elseif e.afk then
+        return name .. " (afk)"
     end
     return name
 end
@@ -856,18 +926,64 @@ local function ReadinessCell(widget, text, tone)
     else widget:SetTextColor(0.2, 1, 0.2) end
 end
 
+function ARC:GetPlayerReadinessState(e)
+    if not e or e.online == false or e.dead or e.afk then return "bad" end
+    if e.ready == "notready" then return "bad" end
+
+    local flaskStatus = self:GetConsumableStatus(e, "flask")
+    local foodStatus = self:GetConsumableStatus(e, "food")
+    if flaskStatus == "missing" or flaskStatus == "expiring" or
+        foodStatus == "missing" or foodStatus == "expiring" then return "bad" end
+    if e.gear and e.gear.scanned and (e.gear.issueCount or 0) > 0 then return "bad" end
+    if select(2, self:GetTalentStatus(e)) == "bad" or
+        select(2, self:GetSelfBuffStatus(e)) == "bad" or
+        select(2, self:GetHealthstoneStatus(e)) == "bad" then return "bad" end
+
+    if self.readyCheckActive and (e.ready == nil or e.ready == "waiting") then return "warn" end
+    if flaskStatus == "unknown" or foodStatus == "unknown" then return "warn" end
+    if not e.gear or not e.gear.scanned or e.gear.validationPending or not e.gear.auditComplete then return "warn" end
+    if select(2, self:GetTalentStatus(e)) == "warn" or
+        select(2, self:GetSelfBuffStatus(e)) == "warn" or
+        select(2, self:GetHealthstoneStatus(e)) == "warn" then return "warn" end
+    return "good"
+end
+
+function ARC:GetRaidReadinessVerdict()
+    local bad, unknown = 0, 0
+    for _, name in ipairs(self.order) do
+        local state = self:GetPlayerReadinessState(self.roster[name])
+        if state == "bad" then bad = bad + 1
+        elseif state == "warn" then unknown = unknown + 1 end
+    end
+    if bad > 0 then
+        local suffix = unknown > 0 and ("; " .. unknown .. " unverified") or ""
+        return string.format("NOT READY - %d player%s with confirmed issues%s", bad, bad == 1 and "" or "s", suffix), "bad", bad, unknown
+    end
+    if unknown > 0 then
+        return string.format("CHECK INCOMPLETE - %d player%s unverified", unknown, unknown == 1 and "" or "s"), "warn", bad, unknown
+    end
+    if #self.order == 0 then return "CHECK INCOMPLETE - roster unavailable", "warn", 0, 0 end
+    return "READY TO PULL - all verified checks passed", "good", 0, 0
+end
+
 function ARC:Render()
     local f = self.frame
     if not f or not f:IsShown() then return end
 
     UpdateTitleText()
     self:UpdateReadyButtons()
+    if f.sessionButton then
+        f.sessionButton:SetText(self.IsSessionActive and self:IsSessionActive() and "Session: ACTIVE" or "Session Report")
+    end
+    local verdictText, verdictTone = self:GetRaidReadinessVerdict()
     local setupText, setupTone = self:GetRaidSetupStatus()
-    f.raidBanner.label:SetText(setupText)
-    if setupTone == "bad" then
+    f.raidBanner.label:SetText(verdictText .. "\n" .. setupText)
+    local bannerTone = (verdictTone == "bad" or setupTone == "bad") and "bad" or
+        ((verdictTone == "warn" or setupTone == "warn") and "warn" or "good")
+    if bannerTone == "bad" then
         f.raidBanner.bg:SetVertexColor(0.8, 0.04, 0.04, 0.9)
         f.raidBanner.label:SetTextColor(1, 1, 1)
-    elseif setupTone == "warn" then
+    elseif bannerTone == "warn" then
         f.raidBanner.bg:SetVertexColor(0.55, 0.34, 0.02, 0.8)
         f.raidBanner.label:SetTextColor(1, 0.9, 0.45)
     else
@@ -876,6 +992,7 @@ function ARC:Render()
     end
 
     local total, ready, missingFlask, missingFood, gearIssues, arcUsers = 0, 0, 0, 0, 0, 0
+    local expiringConsumables, oldArc, inspected, inspectUnavailable = 0, 0, 0, 0
     local talentIssues, selfBuffIssues, stoneIssues = 0, 0, 0
 
     for i, name in ipairs(self.order) do
@@ -886,10 +1003,20 @@ function ARC:Render()
 
         total = total + 1
         if e.ready == "ready" then ready = ready + 1 end
-        if e.auraDataAvailable and not e.flask then missingFlask = missingFlask + 1 end
-        if e.auraDataAvailable and not e.food then missingFood = missingFood + 1 end
+        local flaskStatus = self:GetConsumableStatus(e, "flask")
+        local foodStatus = self:GetConsumableStatus(e, "food")
+        if flaskStatus == "missing" then missingFlask = missingFlask + 1
+        elseif flaskStatus == "expiring" then expiringConsumables = expiringConsumables + 1 end
+        if foodStatus == "missing" then missingFood = missingFood + 1
+        elseif foodStatus == "expiring" then expiringConsumables = expiringConsumables + 1 end
         if e.gear and e.gear.scanned and e.gear.issueCount and e.gear.issueCount > 0 then gearIssues = gearIssues + 1 end
-        if e.hasARC then arcUsers = arcUsers + 1 end
+        if e.gear and e.gear.scanned then inspected = inspected + 1
+        elseif e.online == false or e.inspectable == false then inspectUnavailable = inspectUnavailable + 1 end
+        local versionState = e.hasARC and self:CompareVersions(e.arcVersion, self.VERSION)
+        if e.hasARC then
+            arcUsers = arcUsers + 1
+            if versionState == -1 then oldArc = oldArc + 1 end
+        end
 
         SetReadyIcon(row.ready, e.ready)
         SetRoleIcon(row.role, e.role)
@@ -910,8 +1037,8 @@ function ARC:Render()
         row.name:SetTextColor(r, g, b)
 
         if e.auraDataAvailable then
-            SetPresenceIcon(row.flask, e.flask, e.flaskIcon)
-            SetPresenceIcon(row.food, e.food, e.foodIcon)
+            SetConsumableIcon(row.flask, e, "flask")
+            SetConsumableIcon(row.food, e, "food")
             SetPresenceIcon(row.sta, e.sta, e.staIcon or (e.sta and "Interface\\Icons\\Spell_Holy_WordFortitude"))
             SetPresenceIcon(row.stat, e.stat, e.statIcon or (e.stat and "Interface\\Icons\\Spell_Magic_GreaterBlessingOfKings"))
             SetPresenceIcon(row.crit, e.crit, e.critIcon or (e.crit and "Interface\\Icons\\Ability_Druid_ChallangingRoar"))
@@ -946,7 +1073,11 @@ function ARC:Render()
             row.gear:SetTextColor(0.6, 0.6, 0.6)
         end
 
-        row.arc:SetText(e.hasARC and "Yes" or "-")
+        if not e.hasARC then row.arc:SetText("-")
+        elseif versionState == -1 then row.arc:SetText("Old")
+        elseif versionState == 1 then row.arc:SetText("New")
+        elseif versionState == nil then row.arc:SetText("?")
+        else row.arc:SetText("Yes") end
         local talText, talTone = self:GetTalentStatus(e)
         local buffText, buffTone = self:GetSelfBuffStatus(e)
         local stoneText, stoneTone = self:GetHealthstoneStatus(e)
@@ -956,7 +1087,10 @@ function ARC:Render()
         if talTone == "bad" then talentIssues = talentIssues + 1 end
         if buffTone == "bad" then selfBuffIssues = selfBuffIssues + 1 end
         if stoneTone == "bad" then stoneIssues = stoneIssues + 1 end
-        row.arc:SetTextColor(e.hasARC and 0.2 or 0.5, e.hasARC and 1 or 0.5, e.hasARC and 0.7 or 0.5)
+        if versionState == -1 then row.arc:SetTextColor(1, 0.3, 0.2)
+        elseif versionState == 1 then row.arc:SetTextColor(0.3, 0.8, 1)
+        elseif e.hasARC then row.arc:SetTextColor(0.2, 1, 0.7)
+        else row.arc:SetTextColor(0.5, 0.5, 0.5) end
         ApplyRowVisualState(row, e, i)
     end
 
@@ -965,13 +1099,27 @@ function ARC:Render()
     end
 
     f.summary:SetText(string.format(
-        "|cff55ff55Ready: %d/%d|r  |cffff8888Flask: %d  Food: %d  Gear: %d  Talents: %d  Self: %d  HS: %d|r  |cff55ffbbARC: %d/%d|r",
-        ready, total, missingFlask, missingFood, gearIssues, talentIssues, selfBuffIssues, stoneIssues, arcUsers, total
+        "|cff55ff55Ready: %d/%d|r  |cffff8888Flask: %d  Food: %d  Soon: %d  Gear: %d  Talents: %d  Self: %d  HS: %d|r  |cff55ffbbARC: %d/%d%s|r",
+        ready, total, missingFlask, missingFood, expiringConsumables, gearIssues, talentIssues, selfBuffIssues,
+        stoneIssues, arcUsers, total, oldArc > 0 and ("  |cffff5533Old: " .. oldArc .. "|r") or ""
     ))
 
-    local newHeight = TOP_OFFSET + FOOTER_HEIGHT + math.max(#self.order, 1) * ROW_HEIGHT
+    local totalRows = math.max(#self.order, 1)
+    local scale = (ARC_DB and ARC_DB.scale) or 1
+    local screenHeight = GetScreenHeight and GetScreenHeight() or 768
+    local maxVisibleRows = math.floor(((screenHeight / scale) - TOP_OFFSET - FOOTER_HEIGHT - 40) / ROW_HEIGHT)
+    maxVisibleRows = math.max(6, math.min(25, maxVisibleRows))
+    local visibleRows = math.min(totalRows, maxVisibleRows)
+    local newHeight = TOP_OFFSET + FOOTER_HEIGHT + visibleRows * ROW_HEIGHT
     f:SetHeight(newHeight)
-    f.rowsContainer:SetHeight(math.max(#self.order, 1) * ROW_HEIGHT)
+    f.rowsContainer:SetHeight(totalRows * ROW_HEIGHT)
+    local waiting = math.max(0, total - inspected - inspectUnavailable)
+    local suffix = waiting > 0 and (" (waiting " .. waiting .. ")") or
+        (inspectUnavailable > 0 and (" (unavailable " .. inspectUnavailable .. ")") or "")
+    f.hint:SetText(string.format("Inspect: %d/%d%s  |  /arc help", inspected, total, suffix))
+    if waiting > 0 then f.hint:SetTextColor(1, 0.78, 0.2)
+    elseif inspectUnavailable > 0 then f.hint:SetTextColor(0.65, 0.65, 0.65)
+    else f.hint:SetTextColor(0.3, 1, 0.5) end
 end
 
 --=============================================================================
@@ -987,8 +1135,12 @@ function ARC:AnnounceMissing()
             unavailable = unavailable + 1
         else
             local tags = {}
-            if not e.flask then tags[#tags + 1] = "flask" end
-            if not e.food then tags[#tags + 1] = "food" end
+            local flaskStatus, flaskLeft = self:GetConsumableStatus(e, "flask")
+            local foodStatus, foodLeft = self:GetConsumableStatus(e, "food")
+            if flaskStatus == "missing" then tags[#tags + 1] = "flask"
+            elseif flaskStatus == "expiring" then tags[#tags + 1] = "flask<" .. FormatRemaining(flaskLeft) end
+            if foodStatus == "missing" then tags[#tags + 1] = "food"
+            elseif foodStatus == "expiring" then tags[#tags + 1] = "food<" .. FormatRemaining(foodLeft) end
             if #tags > 0 then
                 missing[#missing + 1] = string.format("%s (%s)", e.name, table.concat(tags, "/"))
             end

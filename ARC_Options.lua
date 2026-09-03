@@ -185,6 +185,7 @@ function ARC:CreateOptionsPanel()
         value = Round(value * 20) / 20 -- snap to 0.05 steps
         ARC_DB.scale = value
         if ARC.frame then ARC.frame:SetScale(value) end
+        if ARC:IsVisible() then ARC:Render() end
         scaleValueText:SetText(string.format("%.2f", value))
     end)
 
@@ -242,11 +243,19 @@ function ARC:CreateOptionsPanel()
     raidBtn:SetText("Raid Setup Checks")
     raidBtn:SetScript("OnClick", function() ARC:OpenRaidOptions() end)
 
+    local sessionBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    sessionBtn:SetSize(130, 22)
+    sessionBtn:SetPoint("LEFT", raidBtn, "RIGHT", 12, 0)
+    sessionBtn:SetText("Session Report")
+    sessionBtn:SetScript("OnClick", function()
+        if ARC.ShowSessionReport then ARC:ShowSessionReport() end
+    end)
+
     local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 6, -20)
     hint:SetWidth(480)
     hint:SetJustifyH("LEFT")
-    hint:SetText("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Click the raid setup banner to choose expected settings. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified.")
+    hint:SetText("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report records attendance, pulls, AFK and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified.")
 
     panel.refresh = function()
         manualCB:SetChecked(ARC_DB.manualMode)

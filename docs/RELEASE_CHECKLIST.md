@@ -11,6 +11,8 @@
 3. Fully restart the original 5.4.8 WoW client. Test installation and the
    [README checklist](../README.md#quick-verification-checklist), then the
    [readiness checklist](READINESS_CHECKS.md#in-game-checklist-before-release).
+   For releases containing session changes, also run the
+   [session checklist](SESSION_REPORT.md#live-verification-checklist).
    Include two updated ARC clients, an old/no-ARC peer, and ElvUI on/off.
    Automated mocked tests are not a substitute for these live checks.
 4. Review and commit/push the intended files, including `.github/workflows/release.yml`

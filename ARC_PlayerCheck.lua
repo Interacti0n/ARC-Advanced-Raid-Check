@@ -227,6 +227,12 @@ local function RenderDetail(frame)
     local buffs, readiness = entry.buffs, {}
     if buffs and not buffs.flask then readiness[#readiness + 1] = { "Flask", "Not active at check" } end
     if buffs and not buffs.food then readiness[#readiness + 1] = { "Food", "Not active at check" } end
+    if buffs and buffs.flask and buffs.flaskExpiresAt and buffs.flaskExpiresAt - GetTime() <= ARC.CONSUMABLE_WARN_SECONDS then
+        readiness[#readiness + 1] = { "Flask", math.max(0, math.ceil((buffs.flaskExpiresAt - GetTime()) / 60)) .. "m remaining" }
+    end
+    if buffs and buffs.food and buffs.foodExpiresAt and buffs.foodExpiresAt - GetTime() <= ARC.CONSUMABLE_WARN_SECONDS then
+        readiness[#readiness + 1] = { "Food", math.max(0, math.ceil((buffs.foodExpiresAt - GetTime()) / 60)) .. "m remaining" }
+    end
     local durability = entry.durWorst or entry.durPct
     if durability and durability < 100 then
         readiness[#readiness + 1] = { "Repair", durability .. "% lowest durability (last ARC group report)" }

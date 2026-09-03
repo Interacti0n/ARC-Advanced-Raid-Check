@@ -53,6 +53,7 @@ function methods:SetScrollChild(child) self.scrollChild = child end
 for _, name in ipairs({ "SetPoint", "ClearAllPoints", "SetFrameStrata", "SetFrameLevel", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "RegisterForClicks", "StartMoving", "StopMovingOrSizing", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetJustifyH", "SetTextColor", "SetVertexColor", "SetAlpha", "SetTexCoord", "SetDesaturated", "SetOwner", "ClearLines", "SetInventoryItem", "SetAllPoints", "SetHighlightTexture", "RegisterEvent", "SetMinMaxValues", "SetValueStep", "SetScale", "AddLine", "SetUnitBuff" }) do
     methods[name] = function() end
 end
+for _, name in ipairs({ "SetMultiLine", "SetFontObject", "SetFocus", "HighlightText", "SetCursorPosition" }) do methods[name] = function() end end
 for _, name in ipairs({ "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do methods[name] = function() end end
 function methods:ClearAllPoints() self.points = {} end
 function methods:SetPoint(...)
@@ -78,6 +79,7 @@ GameTooltip = CreateFrame("GameTooltip", "GameTooltip")
 UISpecialFrames, SlashCmdList = {}, {}
 RAID_CLASS_COLORS = { MAGE = { r = 0.4, g = 0.8, b = 1 } }
 function GetTime() return now end
+function time() return 1700000000 + math.floor(now) end
 function GetReadyCheckStatus() return readyStatus end
 function GetReadyCheckTimeLeft() return readyTimeLeft end
 function ConfirmReadyCheck(value)
@@ -104,6 +106,7 @@ function UnitIsConnected(unit) return units[unit] and units[unit].online end
 function UnitIsVisible(unit) return units[unit] and units[unit].visible end
 function UnitIsUnit(a, b) return UnitGUID(a) ~= nil and UnitGUID(a) == UnitGUID(b) end
 function UnitIsDeadOrGhost(unit) return units[unit] and units[unit].dead or false end
+function UnitIsAFK(unit) return units[unit] and units[unit].afk or false end
 function UnitGroupRolesAssigned() return "DAMAGER" end
 function UnitBuff(unit, index)
     if index == 1 then return "Flask of the Warm Sun", nil, "flask", 0, nil, 3600, 3700, unit, nil, nil, 105691 end
@@ -224,7 +227,7 @@ end
 assert(files[1] == "ARC_Core.lua" and files[#files] == "ARC.lua", "Invalid TOC load order")
 assert(seen["ARC_PlayerCheck.lua"], "Player check must be included in ARC.toc")
 for _, file in ipairs(files) do
-    if not staleTOC or file ~= "ARC_PlayerCheck.lua" then
+    if not staleTOC or (file ~= "ARC_PlayerCheck.lua" and file ~= "ARC_Session.lua") then
         assert(loadfile(file))("ARC")
     end
 end
@@ -238,6 +241,7 @@ assert(ARC.inspectHooksReady)
 assert(InspectFrame == nil, "Load-on-demand inspector must not be forced open")
 if staleTOC then
     assert(not ARC.ShowPlayerCheck and not ARC.AttachInspectCheckButton and not ARC.UpdatePlayerCheck)
+    assert(not ARC.ShowSessionReport and not ARC.StartRaidSession, "Cached TOC must safely omit the new session module")
     assert(#warnings == 1 and warnings[1]:find("Fully exit WoW", 1, true))
     assert(ARC.minimapButton and ARC.optionsPanel, "Missing detail module must not break initialization")
     InspectFrame = CreateFrame("Frame", "InspectFrame")
@@ -250,6 +254,8 @@ if staleTOC then
     SlashCmdList.ARC("check")
     assert(#warnings == 2 and not ARC.playerCheckFrame and not ARC.inspectRequest)
     assert(warnings[2]:find("ARC_PlayerCheck.lua", 1, true), "Explicit check must explain why it cannot open")
+    SlashCmdList.ARC("session")
+    assert(not ARC.sessionFrame, "Missing session module must leave its command harmless")
     SlashCmdList.ARC("")
     assert(ARC:IsVisible(), "Raid window must still work")
     ARC:Hide()
@@ -874,7 +880,7 @@ test("ARC row menu keeps existing actions and pins ARC Check to the row player",
     row.scripts.OnMouseUp(row, "RightButton")
     local actions = {}
     for _, item in ipairs(rowMenu) do actions[item.text] = item end
-    assert(actions.Whisper and actions.Inspect and actions["Remind (missing consumables)"])
+    assert(actions.Whisper and actions.Inspect and actions["Remind (confirmed issues)"])
     local item = assert(actions["ARC Check"])
     entry.unit = "other"
     item.func()
@@ -1227,10 +1233,10 @@ test("raid setup banner is red on mismatch, updates on events and opens options"
         ARC:Render()
         local banner = ARC.frame.raidBanner
         assert(banner.bg.vertexColor[1] == 0.8 and banner.label:GetText():find("MISMATCH", 1, true))
-        assert(banner.points[1][3] == -52 and banner.height == 48 and ARC.frame.width == 850)
+        assert(banner.points[1][3] == -52 and banner.height == 48 and ARC.frame.width == 872)
         loot = "master"
         ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PARTY_LOOT_METHOD_CHANGED")
-        assert(banner.label:GetText():find("Raid setup OK", 1, true) and banner.bg.vertexColor[1] ~= 0.8)
+        assert(banner.label:GetText():find("Raid setup OK", 1, true), "Setup status remains visible below readiness")
         local opened = false
         withGlobals({ InterfaceOptionsFrame_OpenToCategory = function(panel) opened = panel == ARC.raidOptionsPanel end }, function()
             banner.scripts.OnClick(banner)
@@ -1686,5 +1692,150 @@ test("raid branding preserves slash commands, minimap actions, settings and coun
     assert(ARC.frame.title:GetText() == "ARC - Advanced Raid Check (Finished)")
     ARC.readyCheckFinished, readyTimeLeft = false, 30
     ARC:Hide(); GameTooltip:Hide()
+end)
+
+test("25-player roster is scrollable and capped to the screen height", function()
+    local saved = {}
+    for i = 1, 25 do
+        local key = "raid" .. i
+        saved[key] = units[key]
+        units[key] = { guid = "R" .. i, name = "Raider" .. i, online = true, visible = true }
+    end
+    ARC:Hide(); wipe(ARC.roster)
+    withGlobals({ IsInRaid = function() return true end, IsInGroup = function() return true end,
+        GetNumGroupMembers = function() return 25 end, GetScreenHeight = function() return 768 end }, function()
+        ARC:Show()
+        assert(ARC.frame.rosterScroll.scrollChild == ARC.frame.rowsContainer)
+        assert(ARC.frame.rowsContainer.height == 25 * 26)
+        assert(ARC.frame.height <= 728 and ARC.frame.height < 162 + 34 + 25 * 26)
+        assert(ARC.frame.hint:GetText():find("Inspect:", 1, true))
+    end)
+    ARC:Hide(); wipe(ARC.roster)
+    for i = 1, 25 do units["raid" .. i] = saved["raid" .. i] end
+end)
+
+test("one-second updates use status refresh with a five-second full-scan fallback", function()
+    menuStart(); ARC:Show()
+    local scans, original = 0, UnitBuff
+    ARC.selfDirty, ARC.lastSelfBroadcast = false, now
+    withGlobals({ UnitBuff = function(...) scans = scans + 1; return original(...) end }, function()
+        for _ = 1, 4 do ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1) end
+    end)
+    assert(scans <= 4, "Four ticks must perform at most one full aura scan, not four")
+    ARC:Hide()
+end)
+
+test("expiring consumables are yellow, counted and included in confirmed reminders", function()
+    menuStart(); ARC:Show()
+    local entry = ARC.roster["Me-Realm"]
+    entry.flask, entry.flaskIcon, entry.flaskExpiresAt = true, "flask", now + 240
+    entry.food, entry.foodIcon, entry.foodExpiresAt = true, "food", now + 3600
+    entry.auraDataAvailable, entry.online = true, true
+    entry.gear = { scanned = true, auditComplete = true, issueCount = 2 }
+    ARC:Render()
+    local row = ARC.frame.rows[1]
+    assert(row.flask.vertexColor[1] == 1 and row.flask.vertexColor[2] == 0.72)
+    assert(ARC.frame.summary:GetText():find("Soon: 1", 1, true))
+    local whisper
+    withGlobals({ SendChatMessage = function(message, channel, _, target)
+        whisper = { message, channel, target }
+    end }, function() ARC:RemindPlayer(entry) end)
+    assert(whisper and whisper[1]:find("flask <4m", 1, true) and whisper[1]:find("gear (2 issues)", 1, true))
+    assert(whisper[2] == "WHISPER" and whisper[3] == "Me-Realm")
+    ARC:Hide()
+end)
+
+test("ARC versions compare numerically and outdated peers are visible", function()
+    assert(ARC:CompareVersions("1.5.9", "1.6.0") == -1)
+    assert(ARC:CompareVersions("1.6.0", "1.6.0") == 0)
+    assert(ARC:CompareVersions("1.10.0", "1.6.0") == 1)
+    assert(ARC:CompareVersions("custom", "1.6.0") == nil)
+    menuStart(); ARC:Show()
+    local entry = ARC.roster["Me-Realm"]
+    entry.arcVersion = "1.5.0"
+    ARC:Render()
+    assert(ARC.frame.rows[1].arc:GetText() == "Old")
+    assert(ARC.frame.summary:GetText():find("Old: 1", 1, true))
+    ARC:Hide()
+end)
+
+test("AFK state updates immediately and is a confirmed raid blocker", function()
+    menuStart(); ARC:Show()
+    units.player.afk = true
+    ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_FLAGS_CHANGED", "player")
+    local row = ARC.frame.rows[1]
+    assert(row.name:GetText():find("(afk)", 1, true))
+    assert(row.bg.vertexColor[1] == 1 and row.bg.vertexColor[2] == 0.48)
+    assert(ARC.frame.raidBanner.label:GetText():find("NOT READY", 1, true))
+    units.player.afk = false
+    ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_FLAGS_CHANGED", "player")
+    assert(not row.name:GetText():find("(afk)", 1, true))
+    ARC:Hide()
+end)
+
+test("raid verdict separates confirmed failures from unverified data", function()
+    menuStart(); ARC:Show()
+    local entry = ARC.roster["Me-Realm"]
+    entry.online, entry.dead, entry.afk = true, false, false
+    entry.gear = { scanned = true, auditComplete = true, issueCount = 0 }
+    entry.auraDataAvailable = false
+    local text, tone = ARC:GetRaidReadinessVerdict()
+    assert(tone == "warn" and text:find("CHECK INCOMPLETE", 1, true))
+    entry.online = false
+    text, tone = ARC:GetRaidReadinessVerdict()
+    assert(tone == "bad" and text:find("confirmed issues", 1, true))
+    ARC:Hide()
+end)
+
+test("raid sessions track attendance, exact AFK flags, strict trash inactivity and boss pulls", function()
+    menuStart(); ARC:Hide()
+    ARC.activeSession, ARC_DB.activeSession, ARC.sessionActivity = nil, nil, nil
+    ARC_DB.sessions = {}
+    units.party1 = alice
+    alice.afk, alice.dead, alice.online, alice.visible = false, false, true, true
+    withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end,
+        GetInstanceInfo = function() return "Siege of Orgrimmar", "raid", 5 end }, function()
+        assert(ARC:StartRaidSession())
+        local session = ARC.activeSession
+        local member = assert(session.members["Alice-Realm"])
+
+        alice.afk = true
+        ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "PLAYER_FLAGS_CHANGED", "party1")
+        now = now + 7
+        alice.afk = false
+        ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "PLAYER_FLAGS_CHANGED", "party1")
+        assert(member.afkSeconds == 7)
+
+        ARC:StartTrashCombat()
+        for _ = 1, 12 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
+        assert(member.trashInactiveSeconds == 12, "Crossing 10s must retroactively include the first ten seconds")
+        ARC:SessionCombatLog(now, "SPELL_CAST_SUCCESS", false, "A", "Alice", 0, 0, nil, nil)
+        for _ = 1, 5 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
+        assert(member.trashInactiveSeconds == 12, "Activity resets the inactivity timer")
+        for _ = 1, 6 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
+        assert(member.trashInactiveSeconds == 23)
+        ARC:EndTrashCombat()
+
+        ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
+        now = now + 25
+        ARC:SessionCombatLog(now, "UNIT_DIED", false, nil, nil, 0, 0, "A", "Alice")
+        ARC:SessionEncounterEnd(715, "Sha of Pride", 5, 10, 1)
+        assert(session.pulls[1].success and session.pulls[1].firstDeath.name == "Alice" and member.deaths == 1)
+
+        ARC:RefreshRoster()
+        ARC.roster["Alice-Realm"].ready = "notready"
+        ARC:SessionReadyCheckFinished()
+        assert(#session.readyChecks == 1 and session.readyChecks[1].notReady == 1)
+        assert(ARC:EndRaidSession() and #ARC_DB.sessions == 1)
+        local report = ARC:GetSessionReportText()
+        assert(report:find("Siege of Orgrimmar", 1, true) and report:find("Sha of Pride - KILL", 1, true))
+        assert(report:find("AFK flag 7s", 1, true) and report:find("trash inactive ~23s", 1, true))
+        assert(report:find("time after 10s", 1, true))
+        ARC:ShowSessionReport()
+        assert(ARC.sessionFrame:IsShown() and ARC.sessionFrame.text:GetText():find("ARC RAID SESSION REPORT", 1, true))
+        ARC.sessionFrame:Hide()
+    end)
+    units.party1, alice.afk = nil, nil
+    ARC_DB.sessions = {}
 end)
 print("Passed " .. passed .. " ARC regression tests")

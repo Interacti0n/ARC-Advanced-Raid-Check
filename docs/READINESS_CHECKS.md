@@ -139,6 +139,33 @@ Do not replace R1: earlier clients still read its talent/weapon fields.
 - Weapon presence cannot tell Windfury from Flametongue, Earthliving, oils or
   another temporary enchant. No client/report means unknown, not missing.
 
+## Roster refresh, expiry and reminders
+
+The visible roster updates ready status, connection, death and visibility every
+second. `UNIT_AURA` refreshes only the affected player immediately; roster/pet
+events are likewise targeted. A full refresh remains every five seconds as a
+safety net for private-server clients that omit an event. Inspect requests keep
+their existing queue/rate limits. The footer reports completed versus total gear
+scans and separately identifies waiting or unavailable players.
+
+`PLAYER_FLAGS_CHANGED` updates AFK immediately. The name gains `(afk)`, the row
+turns amber and AFK is a confirmed pull blocker. Offline and dead players are
+also blockers. The top banner reports READY TO PULL only with no confirmed or
+unverified findings; confirmed failures produce NOT READY and take color
+priority, while otherwise unknown data produces CHECK INCOMPLETE. Raid setup
+status remains on the banner's second line and can independently make it red.
+
+Timed flask and food auras warn at five minutes remaining. They keep their real
+icons but turn amber; missing remains red and unavailable remains unknown. The
+summary's `Soon` count is per expiring consumable, not per player. Announcements
+and private reminders distinguish missing from expiring effects.
+
+Remind includes only confirmed personal findings: flask/food, completed gear
+audit issues, empty talents, class/tank/pet readiness and Healthstone. It omits
+unknown checks and sends no message when there are no confirmed findings.
+ARC versions are compared as numeric `major.minor.patch`; malformed reports are
+unverified, older clients are marked `Old`, and newer peers are not accused.
+
 ## In-game checklist before release
 
 1. Open `/arc raid`; select your expected mode/size and loot. Deliberately choose
@@ -147,6 +174,10 @@ Do not replace R1: earlier clients still read its talent/weapon fields.
 2. Verify actual difficulty inside an instance, selected difficulty outside,
    loot changes and reopening Options. Test with and without ElvUI. Confirm
    banner, summary, columns and ready-response buttons do not overlap at your scale.
+   Fill a 25-player roster and verify mouse-wheel/scrollbar access at 0.6, 1.0
+   and 1.5 scale on the smallest supported screen resolution.
+   Toggle AFK and confirm the name, amber row and NOT READY verdict update
+   without waiting for the five-second full refresh.
 3. Leave an available talent tier empty, ready check and inspect it. Confirm a
    red Talents cell and the correct tier in the report. Fill it and repeat. Inspect
    someone without ARC, change targets mid-request, and test a partial cache.
@@ -159,6 +190,9 @@ Do not replace R1: earlier clients still read its talent/weapon fields.
    Close ARC, reapply/expire the imbue and wait for the next report (up to 15 sec).
 7. Use an older/no-ARC peer and take an updated peer out of range/offline. Expired
    imbue reports must become unknown, not silently good or falsely missing.
+   Confirm the old peer shows `Old`, its tooltip names the current version and
+   the footer's inspect waiting/unavailable counts change as players move range.
+   Test flask/food above and below five minutes and inspect the Remind whisper.
 8. Test Protection paladin RF missing/present, then switch to Holy/Retribution:
    present RF must be red there. Changing only the group role must not change
    the spec-based rule. Test unknown spec and dead/offline states.

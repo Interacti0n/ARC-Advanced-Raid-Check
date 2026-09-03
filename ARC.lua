@@ -37,6 +37,7 @@ eventFrame:RegisterEvent("READY_CHECK_CONFIRM")
 eventFrame:RegisterEvent("READY_CHECK_FINISHED")
 eventFrame:RegisterEvent("GROUP_ROSTER_UPDATE")
 eventFrame:RegisterEvent("UNIT_AURA")
+eventFrame:RegisterEvent("PLAYER_FLAGS_CHANGED")
 eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
 eventFrame:RegisterEvent("PLAYER_TALENT_UPDATE")
@@ -55,13 +56,14 @@ eventFrame:RegisterEvent("PLAYER_REGEN_DISABLED") -- combat start = the pull
 eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 eventFrame:RegisterEvent("INSPECT_READY")
 
-local elapsedAccum = 0
+local elapsedAccum, fullRefreshAccum = 0, 0
 
 eventFrame:SetScript("OnEvent", function(self, event, ...)
     if event == "ADDON_LOADED" then
         local addon = ...
         if addon == ADDON_NAME then
             ARC_InitDB()
+            if ARC.InitSessionTracker then ARC:InitSessionTracker() end
             if RegisterAddonMessagePrefix then
                 RegisterAddonMessagePrefix(ARC.COMM_PREFIX)
             elseif C_ChatInfo and C_ChatInfo.RegisterAddonMessagePrefix then
@@ -80,6 +82,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             -- Covers the case where ARC's frame already exists and ElvUI
             -- only finishes loading afterward.
             ARC:TrySkinElvUI()
+            if ARC.TrySkinSessionUI then ARC:TrySkinSessionUI() end
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -127,11 +130,13 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
                 e.ready = "notready"
             end
         end
+        if ARC.SessionReadyCheckFinished then ARC:SessionReadyCheckFinished() end
         if ARC:IsVisible() then ARC:Render() end
 
     elseif event == "GROUP_ROSTER_UPDATE" then
         if ARC:IsVisible() then
             ARC:RefreshRoster()
+            fullRefreshAccum = 0
             ARC:Render()
         end
         ARC.selfDirty = true
@@ -141,15 +146,25 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if unit and (unit == "player" or unit:match("^party%d") or unit:match("^raid%d")) then
             if ARC:IsVisible() then
                 RefreshUnitPublicData(unit)
+                ARC:Render()
             end
             if unit == "player" then ARC.selfDirty = true end
         end
 
+    elseif event == "PLAYER_FLAGS_CHANGED" then
+        local unit = ...
+        if unit and (unit == "player" or unit:match("^party%d") or unit:match("^raid%d")) and ARC:IsVisible() then
+            ARC:RefreshRosterStatus()
+            ARC:Render()
+        end
+
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ALIVE" or event == "PLAYER_REGEN_ENABLED" then
         ARC.selfDirty = true
+        if event == "PLAYER_REGEN_ENABLED" and ARC.EndTrashCombat then ARC:EndTrashCombat() end
         if event == "PLAYER_EQUIPMENT_CHANGED" then ARC.forceSelfGearScan = true end
 
     elseif event == "PLAYER_REGEN_DISABLED" then
+        if ARC.StartTrashCombat then ARC:StartTrashCombat() end
         -- Entering combat = the pull. Hide immediately rather than waiting
         -- on a timer after the ready check finished.
         if ARC_DB.autoHide and ARC:IsVisible() then
@@ -175,7 +190,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "UNIT_PET" then
         local unit = ...
         if unit and UnitIsUnit(unit, "player") then ARC.selfDirty = true end
-        if ARC:IsVisible() then ARC:RefreshRoster(); ARC:Render() end
+        if ARC:IsVisible() and unit and UnitExists(unit) then
+            RefreshUnitPublicData(unit)
+            ARC:Render()
+        end
 
     elseif event == "PARTY_LOOT_METHOD_CHANGED" or event == "PLAYER_DIFFICULTY_CHANGED" or event == "ZONE_CHANGED_NEW_AREA" then
         if ARC:IsVisible() then ARC:Render() end
@@ -207,7 +225,13 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     end
 
     if ARC:IsVisible() then
-        ARC:RefreshRoster()
+        fullRefreshAccum = fullRefreshAccum + ARC.REFRESH_EVERY
+        if fullRefreshAccum >= ARC.FULL_REFRESH_EVERY then
+            ARC:RefreshRoster()
+            fullRefreshAccum = 0
+        else
+            ARC:RefreshRosterStatus()
+        end
         ARC:Render() -- also refreshes the title's countdown text every second
         ARC.QueueInspectCandidates()
     end
@@ -268,6 +292,12 @@ SlashCmdList["ARC"] = function(rawMsg)
         ARC:OpenOptions()
     elseif msg == "check" then
         if HasPlayerCheck(true, true) then ARC:ShowPlayerCheck("target") end
+    elseif msg == "session" or msg == "report" then
+        if ARC.ShowSessionReport then ARC:ShowSessionReport() end
+    elseif msg == "session start" then
+        if ARC.StartRaidSession then ARC:StartRaidSession() end
+    elseif msg == "session end" then
+        if ARC.EndRaidSession then ARC:EndRaidSession() end
     elseif msg == "help" then
         print("|cff33ff99ARC commands:|r")
         print("  /arc            - show/hide the window")
@@ -279,6 +309,7 @@ SlashCmdList["ARC"] = function(rawMsg)
         print("  /arc minimap    - toggle the minimap button")
         print("  /arc options    - open the options panel")
         print("  /arc check      - player overview and PvE gear problems (no group required)")
+        print("  /arc session [start|end] - raid attendance, pulls, AFK and trash inactivity report")
         print("  Right-click a player portrait or ARC row for ARC Check.")
         print("  /arc raid - expected raid mode/size and loot method; also click the setup banner.")
         print("  Talents = empty available talents; Self = missing class buffs. ? means unverified.")

@@ -1,3 +1,35 @@
+v1.6.0 CHANGES
+  - Added opt-in raid session reports with attendance, join/leave time, observed
+    AFK duration, boss pulls/kills/durations, first deaths, ready-check snapshots,
+    trash-combat time, pull participation and selectable text export.
+  - Added strict estimated trash inactivity: after 10 seconds without damage,
+    healing, successful casts, interrupts or dispels, the complete inactive
+    interval (including its first 10 seconds) is counted until activity resets it.
+    Visible pet actions credit their owner; dead/offline players are excluded.
+  - Active sessions survive reload; ten completed compact reports are retained.
+    Added main/options buttons, /arc session start|end, legacy combat-log handling,
+    ElvUI styling, storage/event limits and explicit false-positive documentation.
+  - Added immediate AFK tracking through PLAYER_FLAGS_CHANGED. AFK players show
+    `(afk)`, receive an amber row state and count as confirmed pull blockers.
+  - Turned the top banner into a combined raid verdict and setup check:
+    READY TO PULL, NOT READY with confirmed player count, or CHECK INCOMPLETE
+    for unverified data. Confirmed failures take priority without hiding setup.
+  - Added a vertically scrollable raid roster and screen/scale-aware height cap.
+    All 25 players remain available without the window extending off-screen.
+  - Reworked live refreshes: ready/dead/offline/range state remains one-second,
+    aura changes update immediately, and expensive full-roster aura/gear work
+    now uses a five-second fallback instead of running every second.
+  - Added visible inspect progress with scanned, waiting and unavailable counts.
+  - Added numeric ARC version comparison. Outdated peers show a red Old marker,
+    the summary counts them and the tooltip shows the required update version.
+  - Added five-minute flask/food expiry warnings. Expiring icons turn amber and
+    appear in raid totals, player checks, announcements and private reminders.
+  - Expanded Remind to one concise whisper containing every confirmed personal
+    issue: consumables, gear, talents, class/tank/pet readiness and Healthstone.
+    Unknown or unavailable checks are never presented as failures.
+  - Added regression coverage for 25-player layout, refresh throttling, expiry,
+    reminders and old/equal/new/malformed ARC versions.
+
 v1.5.0 CHANGES
   - Renamed the addon to Advanced Raid Check across metadata, window/options
     titles, minimap tooltip and documentation. The ARC folder, /arc commands,

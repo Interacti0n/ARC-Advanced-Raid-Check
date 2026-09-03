@@ -9,9 +9,11 @@ WHAT THIS ADDON DOES
       Ready status, Role, Specialization, Name, Flask, Food, four raid-buff
       categories (Stamina / Stats / Crit / Mastery), item level, durability,
       gems, enchants and primary-stat gear suitability.
-  - Refreshes about once a second while visible, so buffs/consumables you
-    can already see on other players (flask, food, raid buffs) update
-    "live" - no need to reopen the window.
+  - Refreshes fast-changing status every second. Aura events update affected
+    players immediately and a five-second full pass protects against missing
+    private-server events.
+  - Can record opt-in raid sessions: attendance, pulls, ready snapshots, AFK
+    flags, first deaths and estimated inactivity during trash combat.
 
 HOW IT GETS ITS DATA (please read - this explains the limits of the WoW API)
   - Ready status, role, and every buff (flask/food/raid buffs) are read
@@ -45,6 +47,7 @@ SLASH COMMANDS
   /arc minimap    - toggle the minimap button
   /arc options    - open the Interface Options panel
   /arc check      - detailed check of the targeted non-group player
+  /arc session [start|end] - open, start or finish a raid session report
   /arc help       - list commands
 
 FILES
@@ -52,6 +55,7 @@ FILES
   ARC_Core.lua        database, roster, buffs and communication
   ARC_Gear.lua        item level, gems, enchants and stat rules
   ARC_Inspect.lua     inspect fallback
+  ARC_Session.lua     raid-session attendance, encounters and activity report
   ARC_UI.lua          main window and rendering
   ARC_PlayerCheck.lua inspect button and standalone player report
   ARC_Options.lua     minimap button and settings
@@ -75,10 +79,12 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.5.0"
+ARC.VERSION       = "1.6.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
+ARC.FULL_REFRESH_EVERY = 5.0               -- expensive aura/gear fallback scan
+ARC.CONSUMABLE_WARN_SECONDS = 300          -- warn when flask/food has <= 5 min left
 ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often than this
 ARC.INSPECT_RETRY_GAP = 12.0               -- seconds before retrying a failed inspect
 
@@ -297,8 +303,8 @@ end
 local function ScanUnitBuffs(unit)
     local out = {
         auras = {}, auraNames = {},
-        flask = false, flaskName = nil, flaskIcon = nil,
-        food  = false, foodName  = nil, foodIcon  = nil,
+        flask = false, flaskName = nil, flaskIcon = nil, flaskExpiresAt = nil,
+        food  = false, foodName  = nil, foodIcon  = nil, foodExpiresAt = nil,
         -- For the four raid-buff categories we also keep the exact buff
         -- name that matched (staName/statName/critName/mastName), so the
         -- column-header "source list" tooltip and the per-row tooltip can
@@ -311,15 +317,17 @@ local function ScanUnitBuffs(unit)
         staSource = nil, statSource = nil, critSource = nil, mastSource = nil,
     }
     for i = 1, 40 do
-        local name, _, icon, _, _, _, _, caster, _, _, spellID = UnitBuff(unit, i)
+        local name, _, icon, _, _, duration, expiresAt, caster, _, _, spellID = UnitBuff(unit, i)
         if not name then break end
         if spellID then out.auras[spellID] = true end
         out.auraNames[name] = true
         local source = caster and GetUnitIdentity(caster) or nil
         if (not out.flask) and (FLASK_SPELL_IDS[spellID] or FLASK_NAMES[name] or name:find(FLASK_NAME_PATTERN)) then
             out.flask, out.flaskName, out.flaskIcon = true, name, icon
+            if duration and duration > 0 and expiresAt and expiresAt > 0 then out.flaskExpiresAt = expiresAt end
         elseif (not out.food) and (FOOD_SPELL_IDS[spellID] or FOOD_BUFF_NAMES[name]) then
             out.food, out.foodName, out.foodIcon = true, name, icon
+            if duration and duration > 0 and expiresAt and expiresAt > 0 then out.foodExpiresAt = expiresAt end
         elseif (not out.sta) and (STAMINA_BUFF_IDS[spellID] or STAMINA_BUFFS[name]) then
             out.sta, out.staName, out.staIcon, out.staSource = true, name, icon, source
         elseif (not out.stat) and (STATS_BUFF_IDS[spellID] or STATS_BUFFS[name]) then
@@ -378,6 +386,7 @@ local function RefreshUnitPublicData(unit)
     local isSelf = UnitIsUnit(unit, "player")
     e.online = (not UnitIsConnected) or UnitIsConnected(unit)
     e.dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) or false
+    e.afk = UnitIsAFK and UnitIsAFK(unit) or false
     local visible = (not UnitIsVisible) or UnitIsVisible(unit)
     e.auraDataAvailable = e.online and visible
     if isSelf then
@@ -407,8 +416,10 @@ local function RefreshUnitPublicData(unit)
     if e.auraDataAvailable then
         local buffs = ScanUnitBuffs(unit)
         e.buffs = buffs
-        e.flask, e.flaskName, e.flaskIcon = buffs.flask, buffs.flaskName, buffs.flaskIcon
-        e.food,  e.foodName,  e.foodIcon  = buffs.food,  buffs.foodName,  buffs.foodIcon
+        e.flask, e.flaskName, e.flaskIcon, e.flaskExpiresAt =
+            buffs.flask, buffs.flaskName, buffs.flaskIcon, buffs.flaskExpiresAt
+        e.food, e.foodName, e.foodIcon, e.foodExpiresAt =
+            buffs.food, buffs.foodName, buffs.foodIcon, buffs.foodExpiresAt
         e.sta, e.stat, e.crit, e.mast = buffs.sta, buffs.stat, buffs.crit, buffs.mast
         e.staName, e.statName, e.critName, e.mastName =
             buffs.staName, buffs.statName, buffs.critName, buffs.mastName
@@ -478,6 +489,73 @@ function ARC:RefreshRoster()
         RefreshUnitPublicData(unit)
     end
     RebuildOrder()
+end
+
+-- Lightweight pass used every second. Expensive aura, talent and gear reads
+-- are event-driven and retain a slower full-scan fallback for private servers.
+function ARC:RefreshRosterStatus()
+    local needsFullRefresh = false
+    for _, unit in ipairs(GetGroupUnits()) do
+        if UnitExists(unit) then
+            local fullName, name = GetUnitIdentity(unit)
+            local e = fullName and self.roster[fullName]
+            if not e then
+                needsFullRefresh = true
+            else
+                e.unit = unit
+                e.role = UnitGroupRolesAssigned(unit)
+                e.online = (not UnitIsConnected) or UnitIsConnected(unit)
+                e.dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) or false
+                e.afk = UnitIsAFK and UnitIsAFK(unit) or false
+                local visible = (not UnitIsVisible) or UnitIsVisible(unit)
+                e.auraDataAvailable = e.online and visible
+                if UnitIsUnit(unit, "player") then
+                    e.inspectable = true
+                elseif CanInspect then
+                    local ok, canInspect = pcall(CanInspect, unit)
+                    e.inspectable = ok and canInspect and true or false
+                else
+                    e.inspectable = visible
+                end
+                if self.readyCheckActive then
+                    e.ready = GetReadyCheckStatus(unit)
+                    if self.readyCheckInitiator and e.ready == nil then
+                        local initiator = NormalizeFullName(self.readyCheckInitiator)
+                        if initiator == fullName or initiator == name then e.ready = "ready" end
+                    end
+                end
+            end
+        end
+    end
+    if needsFullRefresh then self:RefreshRoster() end
+end
+
+function ARC:GetConsumableStatus(entry, key)
+    if not entry or entry.online == false or not entry.auraDataAvailable then return "unknown" end
+    if not entry[key] then return "missing", 0 end
+    local expiresAt = entry[key .. "ExpiresAt"]
+    if expiresAt and expiresAt > 0 then
+        local remaining = math.max(0, expiresAt - GetTime())
+        if remaining <= self.CONSUMABLE_WARN_SECONDS then return "expiring", remaining end
+        return "present", remaining
+    end
+    return "present"
+end
+
+function ARC:CompareVersions(left, right)
+    local function Parse(value)
+        if type(value) ~= "string" then return nil end
+        local major, minor, patch = value:match("^(%d+)%.(%d+)%.(%d+)$")
+        if not major then return nil end
+        return tonumber(major), tonumber(minor), tonumber(patch)
+    end
+    local la, lb, lc = Parse(left)
+    local ra, rb, rc = Parse(right)
+    if not la or not ra then return nil end
+    if la ~= ra then return la < ra and -1 or 1 end
+    if lb ~= rb then return lb < rb and -1 or 1 end
+    if lc ~= rc then return lc < rc and -1 or 1 end
+    return 0
 end
 
 --=============================================================================
