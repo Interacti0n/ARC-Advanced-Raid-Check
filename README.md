@@ -58,8 +58,9 @@ buttons answer only your own active ready check.
 Players without ARC can still be inspected for spec, equipped gear and low
 item level when they are in inspect range. Private data such as remote
 durability, bags/Healthstones, weapon imbues and hunter-pet Growl autocast
-requires their ARC report. Missing or stale data is shown as **Unverified**, not
-as a false pass or failure.
+requires their ARC report. To avoid false raid blockers on MoP private-server
+cores, remote **Self** and Healthstone checks without usable ARC data are shown
+as passed/skipped; their tooltips explain that they were not verified.
 
 The product name is **Advanced Raid Check**, but technical identifiers remain
 `ARC`, `ARC_DB` and `ARC1` for compatibility with existing settings and peers.

@@ -332,7 +332,7 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
     if entry.online and (not UnitIsVisible or UnitIsVisible(unit)) then entry.buffs = I.ScanUnitBuffs(unit) end
     local peer = self.roster[fullName]
     if peer and peer.lastComm and GetTime() - peer.lastComm < 120 and peer.unit and UnitGUID(peer.unit) == guid then
-        entry.arcVersion, entry.durPct, entry.durWorst = peer.arcVersion, peer.durPct, peer.durWorst
+        entry.hasARC, entry.arcVersion, entry.durPct, entry.durWorst = true, peer.arcVersion, peer.durPct, peer.durWorst
         entry.weaponBuffs, entry.weaponBuffAt = peer.weaponBuffs, peer.weaponBuffAt
         entry.preparation, entry.sacrifice = peer.preparation, peer.sacrifice
     end

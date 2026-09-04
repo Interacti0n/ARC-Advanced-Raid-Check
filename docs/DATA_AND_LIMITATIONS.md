@@ -2,7 +2,9 @@
 
 ARC deliberately distinguishes a confirmed problem from missing information.
 When a reliable answer cannot be obtained, the UI shows **Unverified** or `?`
-instead of inventing a pass or failure.
+instead of inventing a pass or failure. The deliberate exceptions are remote
+**Self** and Healthstone checks: without usable ARC data they display `OK`
+(skipped) to avoid false raid blockers, with the limitation stated in tooltips.
 
 ## What the WoW client provides
 

@@ -954,12 +954,17 @@ function ARC:GetHealthstoneStatus(entry)
         end
     end
     if not grouped or not supplier then return "-", "neutral", "Healthstone: no applicable group/warlock supplier" end
+    -- Inspect cannot read another player's bags. Do not let the absence of ARC
+    -- turn a private-data check into a warning that blocks the raid verdict.
+    if not entry.hasARC then
+        return "OK", "good", "Healthstone check skipped: this player does not report through ARC"
+    end
     local prep = FreshPreparation(entry)
     if entry.online == false or entry.dead or not prep or not prep.healthstone or prep.healthstone == "?" then
-        return "?", "warn", "Healthstone: need a current report from this player's ARC"
+        return "OK", "good", "Healthstone check skipped: no current ARC bag report"
     end
     if prep.healthstone == "0" then return "!0", "bad", "Healthstone missing from bags (or fully consumed)" end
-    if prep.healthstone == "p" then return "?", "warn", "Healthstone present; remaining charges could not be verified" end
+    if prep.healthstone == "p" then return "OK", "good", "Healthstone present; remaining charges could not be verified" end
     return prep.healthstone, "good", "Healthstone: " .. prep.healthstone .. " remaining use(s), reported by ARC; cooldown not checked"
 end
 
@@ -971,6 +976,14 @@ function ARC:ScanSelfBuffs(unit, entry)
     -- on levelling characters. Their talents are still checked by unlock level.
     if not level or level < 1 then out.unknown[1] = "Self buffs: level unavailable"; return out end
     if level < 90 then out.skipped = true; return out end
+    local isSelf = unit and UnitIsUnit(unit, "player")
+    if not isSelf and not entry.hasARC then
+        -- Remote aura lists are inconsistent on several MoP private-server
+        -- cores (notably paladin seals). Without an owner ARC report, skip the
+        -- complete Self policy instead of producing a false error or warning.
+        out.skippedNoARC = true
+        return out
+    end
     local function Check(rule)
         out.checked = out.checked + 1
         local present = AuraPresent(entry, rule)
@@ -1056,6 +1069,9 @@ end
 function ARC:GetSelfBuffStatus(entry)
     local buffs = entry.selfBuffs
     if not buffs then return "?", "warn", { "Self buffs: data unavailable" } end
+    if buffs.skippedNoARC then
+        return "OK", "good", { "Self checks skipped: this player does not report through ARC" }
+    end
     local details = {}
     for _, missing in ipairs(buffs.missing) do details[#details + 1] = "Missing self buff: " .. missing end
     for _, problem in ipairs(buffs.problems or {}) do details[#details + 1] = problem end

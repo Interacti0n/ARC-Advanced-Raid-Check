@@ -14,7 +14,7 @@ local FOOTER_HEIGHT = 34
 local TOP_OFFSET    = 162  -- ready responses, visible raid setup banner, summary, labels
 local FRAME_WIDTH   = 872  -- includes room for the roster scrollbar
 local ICON_MISSING  = "Interface\\RaidFrame\\ReadyCheck-NotReady"
-local ICON_BLANK    = "Interface\\Buttons\\UI-Quickslot2"
+local ICON_UNKNOWN  = "Interface\\RaidFrame\\ReadyCheck-Waiting"
 
 -- Single source of truth for column layout. Both the header labels and the
 -- row widgets are built from this table, so they can no longer drift out of
@@ -149,6 +149,9 @@ local function CreateHeader(parent)
 end
 
 local function SetRoleIcon(tex, role)
+    tex:SetVertexColor(1, 1, 1, 1)
+    tex:SetDesaturated(false)
+    tex:SetAlpha(1)
     if role == "TANK" or role == "HEALER" or role == "DAMAGER" then
         -- This is the atlas used by Blizzard's MoP compact-unit frames. The
         -- old UI-LFG-ICON-ROLES texture has different geometry and appeared
@@ -173,6 +176,9 @@ local function SetRoleIcon(tex, role)
 end
 
 local function SetReadyIcon(tex, status)
+    tex:SetVertexColor(1, 1, 1, 1)
+    tex:SetDesaturated(false)
+    tex:SetAlpha(1)
     if status == "ready" then
         tex:SetTexture("Interface\\RaidFrame\\ReadyCheck-Ready")
         tex:SetTexCoord(0, 1, 0, 1)
@@ -214,10 +220,10 @@ end
 local function SetUnknownPresenceIcon(tex)
     tex:SetVertexColor(1, 1, 1, 1)
     if tex.backdrop then tex.backdrop:Show() end
-    tex:SetTexture(ICON_BLANK)
+    tex:SetTexture(ICON_UNKNOWN)
     tex:SetTexCoord(0, 1, 0, 1)
-    tex:SetDesaturated(true)
-    tex:SetAlpha(0.35)
+    tex:SetDesaturated(false)
+    tex:SetAlpha(0.9)
 end
 
 local function SetConsumableIcon(tex, entry, key)
@@ -595,7 +601,7 @@ local function ApplyDefaultSkin(f)
     f:SetBackdropBorderColor(1, 1, 1, 1)   -- fully opaque border
 end
 
-local ELVUI_BORDERED_ICONS = { "role", "spec", "flask", "food", "sta", "stat", "crit", "mast" }
+local ELVUI_BORDERED_ICONS = { "ready", "role", "spec", "flask", "food", "sta", "stat", "crit", "mast" }
 
 local function ApplyElvUIFont(fontString, E, size)
     if not fontString or not fontString.FontTemplate then return end
@@ -630,6 +636,7 @@ function ARC:SkinRowElvUI(row, E)
         if texture and texture.backdrop and texture.backdrop.SetBackdropBorderColor then
             texture.backdrop:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0)
         end
+        if texture and texture.SetDrawLayer then texture:SetDrawLayer("OVERLAY", 1) end
     end
 
     row.elvuiSkinned = true
@@ -1027,6 +1034,9 @@ function ARC:Render()
         SetRoleIcon(row.role, e.role)
 
         if e.specIcon then
+            row.spec:SetVertexColor(1, 1, 1, 1)
+            row.spec:SetDesaturated(false)
+            row.spec:SetAlpha(1)
             row.spec:SetTexture(e.specIcon)
             row.spec:SetTexCoord(0.08, 0.92, 0.08, 0.92)
             row.spec:Show()

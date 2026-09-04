@@ -51,6 +51,11 @@ Non-lethal poisons, Earth Shield on someone else, glyphs and temporary combat
 procs are intentionally outside this policy. Tank/pet policies are below.
 Self-buff rules only apply at level 90. Symbiosis is checked only for a known
 member of our group with an online non-druid partner; partner range is not proven.
+Remote Self checks run only when that player is detected on ARC. Without ARC,
+the whole Self column is shown as green `OK` (skipped) instead of trusting an
+incomplete remote aura list; the tooltip explicitly says it was skipped. This
+avoids false missing seals and similar private-server aura omissions. The local
+player remains fully checked.
 
 `SELF_BUFF_RULES`, `SHAMAN_SHIELDS`, `SYMBIOSIS`, `TANK_BUFFS`, `RIGHTEOUS_FURY`
 and `SACRIFICE` in `ARC_Core.lua` are the
@@ -107,7 +112,10 @@ The HS check applies only when the subject is a GUID-matched member of our
 current group and an online warlock is in that group. Supplier range or actual
 ability to create a stone is not proven. Solo/non-group city checks and groups
 without such a warlock show neutral `-`. Remote bags require updated ARC;
-offline/dead players, older peers and expired reports show `?`, never assumed good.
+only a current ARC report can produce a confirmed missing `!0`. No ARC, an old
+or expired report, and unavailable charge counts show green `OK` (skipped) so
+private bag data cannot hold the raid verdict in an incomplete state. The
+tooltip states when the value was not verified.
 
 ## Readiness wire extension
 

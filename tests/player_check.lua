@@ -53,6 +53,8 @@ function methods:SetScrollChild(child) self.scrollChild = child end
 for _, name in ipairs({ "SetPoint", "ClearAllPoints", "SetFrameStrata", "SetFrameLevel", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "RegisterForClicks", "StartMoving", "StopMovingOrSizing", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetJustifyH", "SetTextColor", "SetVertexColor", "SetAlpha", "SetTexCoord", "SetDesaturated", "SetOwner", "ClearLines", "SetInventoryItem", "SetAllPoints", "SetHighlightTexture", "RegisterEvent", "SetMinMaxValues", "SetValueStep", "SetScale", "AddLine", "SetUnitBuff" }) do
     methods[name] = function() end
 end
+function methods:SetAlpha(value) self.alpha = value end
+function methods:SetDrawLayer(layer, sublevel) self.drawLayer, self.drawSublevel = layer, sublevel end
 for _, name in ipairs({ "SetMultiLine", "SetFontObject", "SetFocus", "HighlightText", "SetCursorPosition" }) do methods[name] = function() end end
 for _, name in ipairs({ "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do methods[name] = function() end end
 function methods:ClearAllPoints() self.points = {} end
@@ -992,7 +994,7 @@ end)
 
 local function buffEntry(class, ids, spec)
     if spec == nil then spec = ({ MAGE=62, PALADIN=70, WARRIOR=71, DRUID=102, DEATHKNIGHT=251, MONK=269 })[class] end
-    local entry = { class = class, level = 90, specID = spec, online = true, buffs = { auras = {}, auraNames = {} } }
+    local entry = { class = class, level = 90, specID = spec, online = true, hasARC = true, buffs = { auras = {}, auraNames = {} } }
     for _, id in ipairs(ids or {}) do entry.buffs.auras[id] = true end
     return entry
 end
@@ -1026,6 +1028,16 @@ test("self buffs use visible auras and suppress failures on unavailable/dead uni
     entry = buffEntry("WARRIOR")
     entry.selfBuffs = ARC:ScanSelfBuffs("target", entry)
     assert(ARC:GetSelfBuffStatus(entry) == "-", "Do not require combat stances or proc buffs")
+end)
+
+test("remote Self checks without ARC are skipped as pass", function()
+    start()
+    local entry = buffEntry("PALADIN")
+    entry.hasARC = nil
+    entry.selfBuffs = ARC:ScanSelfBuffs("target", entry)
+    local status, tone, details = ARC:GetSelfBuffStatus(entry)
+    assert(status == "OK" and tone == "good" and entry.selfBuffs.skippedNoARC)
+    assert(details[1]:find("does not report through ARC", 1, true))
 end)
 
 test("self buff localization and English fallback work when aura IDs differ", function()
@@ -1254,6 +1266,7 @@ end)
 
 test("self-buff findings render directly in the standalone report and raid summary", function()
     local f = start(); alice.class = "PRIEST"
+    ARC.roster["Alice-Realm"] = { unit="target", lastComm=now, arcVersion=ARC.VERSION }
     ARC:ShowPlayerCheck("target", "A")
     step(); ARC.OnInspectReady("A")
     assert(contents(f):find("Missing self buff: Inner Fire / Inner Will", 1, true))
@@ -1463,9 +1476,9 @@ test("Healthstone count excludes bank and uses charges instead of item count", f
     assert(ARC:ReadHealthstone() == "?")
 end)
 
-test("Healthstones require a group supplier and current ARC data; no-ARC is unknown", function()
+test("Healthstones require a group supplier; unavailable ARC data passes", function()
     start()
-    local entry = { unit="target", guid="A", online=true, preparation={ healthstone="0", checkedAt=now } }
+    local entry = { unit="target", guid="A", online=true, hasARC=true, preparation={ healthstone="0", checkedAt=now } }
     assert(ARC:GetHealthstoneStatus(entry) == "-")
     units.party1, units.player.class = alice, "WARLOCK"
     withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end }, function()
@@ -1473,11 +1486,13 @@ test("Healthstones require a group supplier and current ARC data; no-ARC is unkn
         entry.preparation.healthstone = "3"
         assert(ARC:GetHealthstoneStatus(entry) == "3")
         entry.preparation.healthstone = "p"
-        assert(ARC:GetHealthstoneStatus(entry) == "?")
+        assert(ARC:GetHealthstoneStatus(entry) == "OK")
         entry.preparation.checkedAt = now - 31
-        assert(ARC:GetHealthstoneStatus(entry) == "?")
+        assert(ARC:GetHealthstoneStatus(entry) == "OK")
         entry.preparation = nil
-        assert(ARC:GetHealthstoneStatus(entry) == "?")
+        assert(ARC:GetHealthstoneStatus(entry) == "OK")
+        entry.hasARC = nil
+        assert(ARC:GetHealthstoneStatus(entry) == "OK")
         units.player.class = nil
         assert(ARC:GetHealthstoneStatus(entry) == "-")
     end)
@@ -1520,6 +1535,7 @@ test("Healthstone column and report show confirmed missing items in red", functi
         GetItemCount = function() return 0 end }, function()
         ARC:RefreshRoster()
         local entry = ARC.roster["Alice-Realm"]
+        entry.hasARC = true
         entry.preparation = { pet="0", healthstone="0", checkedAt=now }
         entry.lastComm = now
         ARC:Render()
@@ -1578,13 +1594,13 @@ test("malformed P1 cannot install Sacrifice evidence and Healthstone snapshots s
         ARC.Internal.HandleCommMessage("Alice-Realm", "1.5.0^Alice-Realm^267^500^100^100^R1^111111^xx^P1^0^?^1^9^-^?")
         local entry = ARC.roster["Alice-Realm"]
         assert(not entry.preparation and not entry.sacrifice)
-        local snapshot = { unit="target", guid="A", online=true, preparation={ healthstone="0", checkedAt=now } }
+        local snapshot = { unit="target", guid="A", online=true, hasARC=true, preparation={ healthstone="0", checkedAt=now } }
         assert(ARC:GetHealthstoneStatus(snapshot) == "!0")
         units.target = bob
         assert(ARC:GetHealthstoneStatus(snapshot) == "-", "Changed target cannot reuse a group member's bags")
         units.target = alice
         snapshot.preparation.healthstone = nil
-        assert(ARC:GetHealthstoneStatus(snapshot) == "?")
+        assert(ARC:GetHealthstoneStatus(snapshot) == "OK")
     end)
     units.party1, alice.class = nil, nil
 end)
@@ -1718,6 +1734,19 @@ test("25-player roster is scrollable and capped to the screen height", function(
     end)
     ARC:Hide(); wipe(ARC.roster)
     for i = 1, 25 do units["raid" .. i] = saved["raid" .. i] end
+end)
+
+test("unknown roster icons remain visible with the ElvUI skin", function()
+    menuStart(); ARC:Show()
+    local entry = ARC.roster["Me-Realm"]
+    entry.auraDataAvailable = false
+    ARC:Render()
+    local row
+    for _, candidate in ipairs(ARC.frame.rows) do if candidate.fullName == "Me-Realm" then row = candidate end end
+    assert(row)
+    assert(row.flask.texture[1] == "Interface\\RaidFrame\\ReadyCheck-Waiting")
+    assert(row.flask.alpha == 0.9 and row.flask.drawLayer == "OVERLAY")
+    ARC:Hide()
 end)
 
 test("one-second updates use status refresh with a five-second full-scan fallback", function()
