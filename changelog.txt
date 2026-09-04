@@ -1,3 +1,10 @@
+v1.6.1 CHANGES
+  - Fixed the Session Report crash on the MoP 5.4.8 client.
+  - Prevented unavailable remote Self and Healthstone data from creating false
+    raid warnings; confirmed failures still require a current ARC report.
+  - Fixed invisible role, spec, ready, consumable and raid-buff icons with ElvUI.
+  - Added Arcane/Dalaran Brilliance and hunter pet Howl/Growl variants to Crit.
+
 v1.6.0 CHANGES
   - Added optional raid-session reports with attendance, AFK time, ready-check
     snapshots, boss pulls/kills, first deaths and copyable results.

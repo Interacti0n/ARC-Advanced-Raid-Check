@@ -1749,6 +1749,22 @@ test("unknown roster icons remain visible with the ElvUI skin", function()
     ARC:Hide()
 end)
 
+test("mage brilliance and hunter pet howl variants count as crit buffs", function()
+    for _, aura in ipairs({
+        { "Arcane Brilliance", 1459 },
+        { "Dalaran Brilliance", 61316 },
+        { "Furious Howl", 24604 },
+        { "Furious Growl", 0 },
+    }) do
+        withGlobals({ UnitBuff = function(_, index)
+            if index == 1 then return aura[1], nil, "crit", 0, nil, 0, 0, "player", nil, nil, aura[2] end
+        end }, function()
+            local buffs = ARC.Internal.ScanUnitBuffs("player")
+            assert(buffs.crit and buffs.critName == aura[1] and buffs.critIcon == "crit")
+        end)
+    end
+end)
+
 test("one-second updates use status refresh with a five-second full-scan fallback", function()
     menuStart(); ARC:Show()
     local scans, original = 0, UnitBuff

@@ -614,6 +614,16 @@ function ARC:SkinRowElvUI(row, E)
     E = E or self.elvuiEngine
     if not E or not E.media then return end
 
+    -- ElvUI 2.76 creates texture backdrops as child frames. At frame level 0
+    -- those frames land on the same level as the row and can cover every icon.
+    -- Raise the row first so the generated backdrop sits one level below its
+    -- role/spec/buff textures instead of drawing over them.
+    if row.GetFrameLevel and row.SetFrameLevel then
+        local parent = row.GetParent and row:GetParent()
+        local parentLevel = parent and parent.GetFrameLevel and parent:GetFrameLevel() or 0
+        if row:GetFrameLevel() <= parentLevel then row:SetFrameLevel(parentLevel + 2) end
+    end
+
     local blank = E.media.blankTex or "Interface\\Buttons\\WHITE8X8"
     local border = E.media.bordercolor or { 0, 0, 0 }
     local value = E.media.rgbvaluecolor or { 0.2, 0.8, 1 }
@@ -630,11 +640,13 @@ function ARC:SkinRowElvUI(row, E)
 
     for _, key in ipairs(ELVUI_BORDERED_ICONS) do
         local texture = row.icons and row.icons[key]
-        if texture and texture.CreateBackdrop and not texture.backdrop then
-            pcall(texture.CreateBackdrop, texture, "Default", true)
-        end
-        if texture and texture.backdrop and texture.backdrop.SetBackdropBorderColor then
-            texture.backdrop:SetBackdropBorderColor(border[1] or 0, border[2] or 0, border[3] or 0)
+        -- ElvUI 2.76 implements texture backdrops as child Frames. On this
+        -- client those frames render above parent-owned texture regions and
+        -- leave only empty black squares visible. Do not frame roster icons;
+        -- also hide backdrops created by an earlier skin attempt this session.
+        if texture and texture.backdrop then
+            texture.backdrop:Hide()
+            texture.backdrop = nil
         end
         if texture and texture.SetDrawLayer then texture:SetDrawLayer("OVERLAY", 1) end
     end

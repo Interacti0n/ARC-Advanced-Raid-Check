@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.6.0"
+ARC.VERSION       = "1.6.1"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
@@ -180,11 +180,14 @@ local CRIT_BUFFS = {
     ["Bellowing Roar"]            = true,
     ["Fearless Roar"]             = true,
     ["Furious Howl"]              = true,
+    ["Furious Growl"]             = true, -- private-server name used for the hunter pet crit aura
     ["Still Water"]               = true,
+    ["Arcane Brilliance"]         = true,
+    ["Dalaran Brilliance"]        = true,
 }
 local CRIT_BUFF_IDS = {
     [17007] = true, [116781] = true, [90309] = true, [126373] = true,
-    [24604] = true, [126309] = true,
+    [24604] = true, [126309] = true, [1459] = true, [61316] = true,
 }
 local MASTERY_BUFFS = {
     ["Blessing of Might"]     = true,
