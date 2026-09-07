@@ -1,3 +1,9 @@
+v1.6.2 CHANGES
+  - Fixed Food detection so Ancestral Vigor and other unrelated auras are no
+    longer treated as Well Fed.
+  - Replaced the Food catalog with verified MoP 250/275/300-stat and patch 5.4
+    food aura IDs while retaining the private-server Well Fed fallback.
+
 v1.6.1 CHANGES
   - Fixed the Session Report crash on the MoP 5.4.8 client.
   - Prevented unavailable remote Self and Healthstone data from creating false

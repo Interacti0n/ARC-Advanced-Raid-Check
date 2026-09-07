@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.6.1"
+ARC.VERSION       = "1.6.2"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
@@ -132,13 +132,14 @@ local FLASK_SPELL_IDS = {
 -- MoP food buffs all apply a generically named "Well Fed" effect.
 local FOOD_BUFF_NAME = "Well Fed"
 local FOOD_SPELL_IDS = {
-    [104264] = true, [104267] = true, [104269] = true,
-    [104271] = true, [104273] = true, [104275] = true, [104277] = true,
-    [105284] = true, [105285] = true, [105286] = true,
-    [125106] = true, [125107] = true, [125108] = true,
-    [125109] = true, [125110] = true, [125111] = true,
-    [126533] = true, [126534] = true, [126535] = true,
-    [126536] = true, [126537] = true, [126538] = true,
+    -- Pandaren Banquet / individual 250, 275 and 300 stat foods.
+    [104264] = true, [104267] = true, [104271] = true, [104272] = true,
+    [104273] = true, [104274] = true, [104275] = true, [104276] = true,
+    [104277] = true, [104278] = true, [104279] = true, [104280] = true,
+    [104281] = true, [104282] = true, [104283] = true,
+    -- Patch 5.4 noodle-cart food buffs.
+    [146804] = true, [146805] = true, [146806] = true,
+    [146807] = true, [146808] = true,
 }
 
 local function BuildLocalizedSpellNames(ids, fallbackName)

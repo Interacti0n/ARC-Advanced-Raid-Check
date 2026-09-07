@@ -1765,6 +1765,34 @@ test("mage brilliance and hunter pet howl variants count as crit buffs", functio
     end
 end)
 
+test("food accepts MoP Well Fed IDs without classifying unrelated auras", function()
+    for _, spellID in ipairs({ 104264, 104283, 146804, 146808 }) do
+        withGlobals({ UnitBuff = function(_, index)
+            if index == 1 then return "Localized Food " .. spellID, nil, "food", 0, nil, 3600, 3700, "player", nil, nil, spellID end
+        end }, function()
+            local buffs = ARC.Internal.ScanUnitBuffs("player")
+            assert(buffs.food and buffs.foodIcon == "food")
+        end)
+    end
+    for _, aura in ipairs({
+        { "Ancestral Vigor", 105284 },
+        { "Ice Lance", 105285 },
+        { "Unrelated Aura", 125106 },
+        { "Unrelated Aura", 126533 },
+    }) do
+        withGlobals({ UnitBuff = function(_, index)
+            if index == 1 then return aura[1], nil, "other", 0, nil, 30, 130, "player", nil, nil, aura[2] end
+        end }, function()
+            assert(not ARC.Internal.ScanUnitBuffs("player").food)
+        end)
+    end
+    withGlobals({ UnitBuff = function(_, index)
+        if index == 1 then return "Well Fed", nil, "food", 0, nil, 3600, 3700, "player", nil, nil, 999999 end
+    end }, function()
+        assert(ARC.Internal.ScanUnitBuffs("player").food, "Well Fed name fallback must support custom server IDs")
+    end)
+end)
+
 test("one-second updates use status refresh with a five-second full-scan fallback", function()
     menuStart(); ARC:Show()
     local scans, original = 0, UnitBuff

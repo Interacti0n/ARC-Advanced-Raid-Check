@@ -71,10 +71,12 @@ See [Gear rules](GEAR_RULES.md) for the exact policy.
 
 ## Aura and server-core differences
 
-Aura checks primarily use locale-neutral spell IDs. English-name fallbacks are
-retained for private-server cores that return incomplete aura data. An aura
-that the client cannot currently observe is not treated as a confirmed missing
-flask, food or class buff.
+Aura checks primarily use locale-neutral spell IDs. Food detection is limited
+to verified MoP 250/275/300-stat and patch 5.4 food auras, with `Well Fed` kept
+as a name fallback for private-server cores that rewrite spell IDs. Other
+English-name fallbacks are retained where incomplete aura data requires them.
+An aura that the client cannot currently observe is not treated as a confirmed
+missing flask, food or class buff.
 
 Private 5.4.8 server cores can implement API details differently. When a result
 looks wrong, enable Lua errors with `/console scriptErrors 1`, reproduce it
