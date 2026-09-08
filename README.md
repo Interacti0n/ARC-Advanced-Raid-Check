@@ -12,7 +12,7 @@ answering ready checks automatically.
 - talents, class self-buffs, tank stance, pets, Growl and Healthstone checks
 - a clear **READY TO PULL**, **NOT READY** or **CHECK INCOMPLETE** verdict
 - standalone **ARC Check** for a targeted player, even outside your group
-- automatic raid-session reports with tables for players, bosses and trash inactivity
+- automatic raid-session reports with players, bosses, trash inactivity and loot history
 - 25-player scrolling roster and automatic optional ElvUI styling
 
 ## Install
@@ -50,7 +50,7 @@ sessions are retained for fourteen days.
 | [User guide](docs/USER_GUIDE.md) | Window, colors, commands, settings, ARC Check and common workflows |
 | [Readiness checks](docs/READINESS_CHECKS.md) | Talents, class buffs, tanks, pets, Growl, Healthstones and protocol behavior |
 | [Gear rules](docs/GEAR_RULES.md) | Item level, gems, enchants, primary stats and policy customization |
-| [Session reports](docs/SESSION_REPORT.md) | Automatic sessions, attendance, bosses, deaths and trash inactivity |
+| [Session reports](docs/SESSION_REPORT.md) | Automatic sessions, attendance, bosses, deaths, trash inactivity and loot |
 | [Data and limitations](docs/DATA_AND_LIMITATIONS.md) | What inspect, unit APIs and the ARC channel can and cannot provide |
 | [Architecture](docs/ARCHITECTURE.md) | Module ownership, load order and compatibility identifiers |
 | [Testing](docs/TESTING.md) | In-game release verification checklist |

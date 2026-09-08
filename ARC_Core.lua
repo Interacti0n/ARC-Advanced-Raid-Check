@@ -82,6 +82,8 @@ _G.ARC = ARC
 ARC.VERSION       = "1.8.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
+ARC.COMM_MAX_BYTES = 255                   -- legacy MoP addon-message payload limit
+ARC.COMM_HEARTBEAT = 15.0                  -- refresh unchanged peer snapshots
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
 ARC.FULL_REFRESH_EVERY = 5.0               -- expensive aura/gear fallback scan
 ARC.CONSUMABLE_WARN_SECONDS = 300          -- warn when flask/food has <= 5 min left
@@ -261,6 +263,8 @@ ARC.roster = {}
 ARC.order  = {}              -- ordered list of fullNames for display
 ARC.inspectQueue = {}
 ARC.lastSelfBroadcast = 0
+ARC.lastSelfBroadcastAttempt = 0
+ARC.lastSelfPayload = nil
 ARC.selfDirty = true
 ARC.readyCheckActive   = false   -- true only while a check is actively counting down
 ARC.readyCheckFinished = false   -- true after a check has ended (until the next one starts)
@@ -708,22 +712,58 @@ local function BuildSelfPayload()
     return table.concat(parts, "^")
 end
 
+function ARC:SendAddonPayload(msg)
+    if not (IsInGroup() or IsInRaid()) or type(msg) ~= "string" or #msg > ARC.COMM_MAX_BYTES then
+        return false
+    end
+    local sender = C_ChatInfo and C_ChatInfo.SendAddonMessage or SendAddonMessage
+    if type(sender) ~= "function" then return false end
+    local chatType = IsInRaid() and "RAID" or "PARTY"
+    local ok, result = pcall(sender, ARC.COMM_PREFIX, msg, chatType)
+    if not ok or result == false then
+        if not ARC.commSendWarningShown then
+            print("|cffffcc00ARC:|r the server rejected an addon-channel report; ARC will retry safely.")
+            ARC.commSendWarningShown = true
+        end
+        return false
+    end
+    return true
+end
+
 function ARC:BroadcastSelf(force)
     if not (IsInGroup() or IsInRaid()) then return end
     local now = GetTime()
-    if (not force) and (now - ARC.lastSelfBroadcast < ARC.BROADCAST_MIN_GAP) then
+    local lastAttempt = math.max(ARC.lastSelfBroadcast or 0, ARC.lastSelfBroadcastAttempt or 0)
+    if (not force) and (now - lastAttempt < ARC.BROADCAST_MIN_GAP) then
         ARC.selfDirty = true
-        return
+        return false
     end
-    local chatType = IsInRaid() and "RAID" or "PARTY"
     local msg = BuildSelfPayload()
-    if C_ChatInfo and C_ChatInfo.SendAddonMessage then
-        C_ChatInfo.SendAddonMessage(ARC.COMM_PREFIX, msg, chatType)
-    elseif SendAddonMessage then
-        SendAddonMessage(ARC.COMM_PREFIX, msg, chatType)
+    local heartbeatDue = now - (ARC.lastSelfBroadcast or 0) >= ARC.COMM_HEARTBEAT
+    if msg == ARC.lastSelfPayload and not heartbeatDue then
+        ARC.selfDirty = false
+        return false
     end
+
+    ARC.lastSelfBroadcastAttempt = now
+    if type(msg) ~= "string" or #msg > ARC.COMM_MAX_BYTES then
+        if not ARC.commPayloadWarningShown then
+            print("|cffff0000ARC:|r readiness report exceeded the addon-channel limit and was not sent.")
+            ARC.commPayloadWarningShown = true
+        end
+        ARC.selfDirty = false
+        return false
+    end
+
+    if not ARC:SendAddonPayload(msg) then
+        ARC.selfDirty = true
+        return false
+    end
+
     ARC.lastSelfBroadcast = now
+    ARC.lastSelfPayload = msg
     ARC.selfDirty = false
+    return true
 end
 
 local function FindGroupEntryBySender(sender)
@@ -743,6 +783,10 @@ end
 
 local function HandleCommMessage(sender, msg)
     if type(msg) ~= "string" or #msg > 255 then return end
+    if msg:sub(1, 3) == "L1^" then
+        if ARC.HandleSessionLootComm then ARC:HandleSessionLootComm(sender, msg) end
+        return
+    end
     local ver, name, specID, ilvl, dur, durWorst, extension, talentCode, weaponCode,
         prepVersion, petCode, growlCode, sacrificeCode, stoneCode, petGUID, formCode,
         professionVersion, professionCode = strsplit("^", msg)

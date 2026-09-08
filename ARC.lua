@@ -230,7 +230,8 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
 
     -- Weapon imbues do not reliably generate UNIT_AURA. Refresh our readiness
     -- report even with the window closed; expiry bounds remote imbue trust.
-    if (IsInGroup() or IsInRaid()) and GetTime() - ARC.lastSelfBroadcast >= 15 then ARC.selfDirty = true end
+    local lastCommAttempt = math.max(ARC.lastSelfBroadcast or 0, ARC.lastSelfBroadcastAttempt or 0)
+    if (IsInGroup() or IsInRaid()) and GetTime() - lastCommAttempt >= ARC.COMM_HEARTBEAT then ARC.selfDirty = true end
     if ARC.selfDirty then
         RefreshUnitPublicData("player")
         ARC:BroadcastSelf(false)

@@ -55,6 +55,7 @@ It checks:
 - Healthstone bag counts versus charges, group/supplier scope, expiry and red HS/report findings;
 - validated P1 extensions and outgoing report round trips, with old R1 compatibility;
 - backwards-compatible sender-bound readiness messages, report expiry and hidden-window refresh;
+- addon-message size guards, failed server sends, duplicate suppression and heartbeat delivery;
 - non-group reports with ordered identity, only problem slots and no roster insertion;
 - cached gem IDs, low-level items, enchants and empty required slots;
 - partial item caches, unavailable equipment and unknown specialization;
@@ -75,6 +76,8 @@ It checks:
 - hunter ranged weapon ilvl weighting.
 - raid-session attendance, AFK intervals, 5-second trash inactivity with
   retroactive threshold credit/reset, boss kills/first deaths and copyable reports.
+- player-grouped session loot, boss attribution, epic-only trash, exact item
+  tooltips, bonus-roll sync/deduplication and empty-roll limitations.
 - stale TOC omitting the new module: one startup warning, safe world/inspect
   events and update ticks, actionable `/arc check` feedback, working raid UI,
   minimap and ready-check response buttons.

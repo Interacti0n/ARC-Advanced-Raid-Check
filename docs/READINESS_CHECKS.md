@@ -140,7 +140,9 @@ Do not replace R1: earlier clients still read its talent/weapon fields.
   passed checks; older clients still supply the original gear/durability data.
 - Talent/Sacrifice freshness: 65 seconds. Weapon/preparation freshness: 30 seconds. While grouped,
   self reports refresh every 15 seconds, even with ARC hidden, and retain the
-  existing 2-second minimum interval. No additional inspect is sent for imbues.
+  existing 2-second minimum interval. Identical event-driven reports between
+  heartbeats are suppressed. Oversize reports and private-server send errors
+  are handled without throwing a Lua error. No additional inspect is sent for imbues.
 - Pet, bag, stance, aura and talent events mark the local report dirty. Incoming
   older R1-only/base reports clear preparation fields; they cannot renew P1 data.
   Existing inspect talent evidence may remain until its normal expiry.

@@ -57,6 +57,13 @@ imbues and Healthstones. Older ARC versions remain compatible, but unavailable
 newer fields stay unverified.
 The ARC column displays **Old** for a detected older client.
 
+During an active raid session, the public localized loot event supplies item
+awards for the group. ARC peers additionally send only their own bonus-roll
+result. This is required to record an empty bonus roll; a player without ARC
+cannot be classified as having rolled or skipped when no public item exists.
+Incoming bonus data is accepted only for the authenticated sender and a locally
+recorded boss kill. Exact item links are bounded and validated before storage.
+
 Grouped clients refresh relevant reports at least every 15 seconds, subject to
 the existing two-second minimum send interval. Time-sensitive pet, stance,
 weapon-imbue and Healthstone information expires after 30 seconds. Remote

@@ -70,7 +70,7 @@ Do not label the version verified on the server until the live checklist passes.
 
 ## Current 1.8.0 local preflight — 2026-09-08
 
-- 129 mocked ARC regression tests passed, including belt buckle, meta suitability, profession reporting/gear bonuses, private-server API failures, local self-checks, session tables, retention and compatibility paths.
+- 132 mocked ARC regression tests passed, including belt buckle, meta suitability, profession reporting/gear bonuses, private-server API failures, local self-checks, session loot/tables, retention and compatibility paths.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.
 - All eight addon Lua modules and the test harness parsed as Lua 5.1.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.

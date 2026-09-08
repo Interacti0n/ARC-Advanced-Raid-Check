@@ -5,7 +5,7 @@ raw combat log. With automatic tracking enabled, entering a raid instance starts
 a session and remaining outside it for 30 seconds finishes the session. Wipes,
 release and `/reload` do not split it. Manual start/end commands remain available.
 
-The report uses **Players**, **Bosses** and **Export** tabs. **Previous/Next**
+The report uses **Players**, **Bosses**, **Loot** and **Export** tabs. **Previous/Next**
 browses retained reports, and the summary shows the current position as
 **Session X / Y**. **Select All for Copy** appears only on Export. **Delete
 Report** removes the selected completed report after confirmation; an active
@@ -20,12 +20,46 @@ session cannot be deleted.
 - boss, trash and other/unknown death totals, plus first-death counts;
 - the number of completed ready checks, without retaining their issue lists;
 - number and duration of trash combats;
-- estimated inactivity during trash and its percentage of eligible trash time.
+- estimated inactivity during trash and its percentage of eligible trash time;
+- boss item/token awards, successful and empty bonus rolls, and epic trash loot.
 
 Completed sessions from the last fourteen days are retained in
 `ARC_DB.sessions`; older entries are permanently removed. The active session is stored separately and resumes after
 `/reload`. At session end ARC retains summaries, not every combat-log event.
-Each session is capped at 200 pulls and 100 counted ready checks.
+Each session is capped at 200 pulls, 100 counted ready checks and 500 loot rows.
+
+## Loot report
+
+The **Loot** tab lists every session member, including players with no recorded
+loot. Click a player to expand their rewards in chronological order. Each detail
+shows time, boss/source, item and variant labels. Hovering the icon opens the
+exact saved item hyperlink; Shift-click inserts that link into chat when the
+client permits it. Export includes the same loot grouped by player.
+
+After a recorded boss kill, ARC keeps that boss as the preferred loot source
+until the next encounter starts. Once real trash combat has begun, only items
+confirmed as epic are retained, but they remain attributed to the previous boss.
+This intentionally favors keeping unusually late master-loot awards on the
+correct boss; an epic trash drop between bosses may therefore appear under that
+boss.
+If item data is initially uncached, ARC retries it and keeps the trash row hidden
+until epic quality is confirmed; unresolved trash rows are discarded when the
+session ends. Before the first recorded kill, qualifying drops use `Trash` or
+`Unknown source` normally.
+
+ARC preserves the full hyperlink and scans its tooltip for Heroic, Warforged
+and Thunderforged labels. Recorded encounter difficulty supplies the normal,
+Heroic, Raid Finder or Flexible fallback. Warforged status is never guessed
+from item level alone because ordinary upgrade levels can overlap it.
+
+Successful bonus-loot item messages are visible through the normal localized
+loot event. The local `BONUS_ROLL_STARTED`/`BONUS_ROLL_RESULT` events also let an
+ARC client report its own item or `no item` result to peers. These compact `L1`
+reports are sender-bound: a client can add a bonus result only for itself and a
+boss kill that exists in the receiver's session. A player without ARC can still
+have public item awards recorded, but an empty bonus roll is unknowable and is
+not invented. Private-server cores that omit bonus-roll events simply provide
+less bonus detail without breaking the rest of the session.
 
 ## Trash inactivity
 
@@ -75,4 +109,8 @@ the Export tab and the normal operating-system copy shortcut.
 5. Verify Players sorting and the green <=5%, yellow <=30%, red >30% thresholds.
 6. Complete several ready checks and verify only their count is retained.
 7. `/reload` during a session, then leave for 30 seconds and verify automatic end.
-8. Verify Players, Bosses and Export with ElvUI enabled and disabled.
+8. Loot a boss item and an epic trash item; verify lower-quality trash is absent.
+9. Use a bonus roll with and without an item and compare a peer with/without ARC.
+10. Expand a Loot player, hover the exact item, Shift-click it, and verify
+    Heroic/Warforged labels against the real tooltip.
+11. Verify Players, Bosses, Loot and Export with ElvUI enabled and disabled.

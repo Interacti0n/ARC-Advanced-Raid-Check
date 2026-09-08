@@ -162,8 +162,11 @@ The **Players** table shows attendance, offline time, trash inactivity, boss
 pulls and deaths. Trash idle is green through 5%, yellow through 30% and red
 above 30% of eligible trash time. Hover Deaths for boss/trash/other and first-
 death totals. **Bosses** groups and expands attempts; **Export** provides the
-copyable summary. ARC keeps completed sessions for fourteen days and then
-removes them permanently.
+copyable summary. **Loot** groups chronological boss rewards, bonus-roll
+results and epic trash drops under every player. Expand a player and hover an
+item icon for its exact saved tooltip; Shift-click can insert the link into
+chat. Empty bonus rolls require ARC on that player. ARC keeps completed
+sessions for fourteen days and then removes them permanently.
 
 See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 

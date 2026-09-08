@@ -1302,7 +1302,7 @@ test("talent and weapon reports are sender-bound, bounded and backwards compatib
     units.party1, alice.class = nil, nil
 end)
 
-test("closed ARC sends periodic readiness reports while preserving the two-second limit", function()
+test("closed ARC deduplicates reports while preserving throttle and heartbeat", function()
     menuStart(); ARC:Hide()
     local messages = {}
     withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 1 end,
@@ -1310,7 +1310,7 @@ test("closed ARC sends periodic readiness reports while preserving the two-secon
             assert(prefix == "ARC1" and channel == "PARTY" and #message <= 255)
             messages[#messages + 1] = message
         end }, function()
-        ARC.selfDirty, ARC.lastSelfBroadcast = false, now
+        ARC.selfDirty, ARC.lastSelfBroadcast, ARC.lastSelfBroadcastAttempt, ARC.lastSelfPayload = false, now, now, nil
         now = now + 15
         ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
         assert(#messages == 1 and messages[1]:find("^R1^111111^xx", 1, true))
@@ -1319,7 +1319,33 @@ test("closed ARC sends periodic readiness reports while preserving the two-secon
         assert(#messages == 1 and ARC.selfDirty)
         now = now + 2
         ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
-        assert(#messages == 2 and not ARC:IsVisible())
+        assert(#messages == 1 and not ARC.selfDirty, "Identical event reports must be suppressed")
+        now = now + 13
+        ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
+        assert(#messages == 2 and messages[1] == messages[2] and not ARC:IsVisible())
+    end)
+end)
+
+test("outgoing reports reject oversize data and survive server API errors", function()
+    menuStart(); ARC:Hide()
+    local calls, fail = 0, false
+    withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 1 end,
+        SendAddonMessage = function()
+            calls = calls + 1
+            if fail then error("private-server channel failure") end
+        end }, function()
+        ARC.lastSelfPayload, ARC.lastSelfBroadcast, ARC.lastSelfBroadcastAttempt = nil, now - 20, now - 20
+        local originalName = units.player.name
+        units.player.name = string.rep("X", 260)
+        assert(ARC:BroadcastSelf(true) == false and calls == 0)
+        units.player.name = originalName
+
+        fail, ARC.selfDirty = true, true
+        now = now + ARC.BROADCAST_MIN_GAP
+        assert(pcall(function() ARC:BroadcastSelf(false) end) and calls == 1 and ARC.selfDirty)
+        fail = false
+        now = now + ARC.BROADCAST_MIN_GAP
+        assert(ARC:BroadcastSelf(false) and calls == 2 and not ARC.selfDirty)
     end)
 end)
 
@@ -1775,7 +1801,8 @@ test("outgoing P1 reports round-trip real pet, Sacrifice, charge and form fields
             GetNumShapeshiftForms = function() return 1 end,
             GetShapeshiftFormInfo = function() return "icon", "Defensive Stance", false, true end,
             SendAddonMessage = function(_, payload) message = payload end }, function()
-            ARC.selfDirty, ARC.lastSelfBroadcast = true, now - 3
+            ARC.selfDirty, ARC.lastSelfBroadcast, ARC.lastSelfBroadcastAttempt, ARC.lastSelfPayload =
+                true, now - 3, now - 3, nil
             ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
             assert(message and #message <= 255)
             local fields = { strsplit("^", message) }
@@ -2211,6 +2238,108 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
     ARC_DB.sessions = {}
 end)
 
+test("session loot groups boss rewards, bonus rolls and epic trash with exact tooltips", function()
+    menuStart(); ARC:Hide()
+    ARC.activeSession, ARC_DB.activeSession, ARC.sessionActivity = nil, nil, nil
+    ARC.trashCombatStartedAt, ARC.lastLootBoss, ARC.pendingBonusRoll = nil, nil, nil
+    ARC_DB.sessions = {}
+    units.party1 = alice
+    alice.online, alice.visible = true, true
+    local sent = {}
+    local tooltipLine = object("FontString")
+    tooltipLine:SetText("Heroic Warforged")
+    withGlobals({
+        IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end,
+        GetInstanceInfo = function() return "Siege of Orgrimmar", "raid", 5 end,
+        LOOT_ITEM = "%s receives loot: %s.", LOOT_ITEM_SELF = "You receive loot: %s.",
+        LOOT_ITEM_MULTIPLE = "%s receives loot: %sx%d.",
+        LOOT_ITEM_SELF_MULTIPLE = "You receive loot: %sx%d.",
+        ARCSessionLootScanTooltipTextLeft1 = tooltipLine,
+        SendAddonMessage = function(prefix, payload, channel)
+            assert(prefix == "ARC1" and channel == "PARTY" and #payload <= 255)
+            sent[#sent + 1] = payload
+        end,
+    }, function()
+        assert(ARC:StartRaidSession())
+        local session = ARC.activeSession
+        assert(session.version == 3 and type(session.loot) == "table")
+        ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
+        now = now + 30
+        ARC:SessionEncounterEnd(715, "Sha of Pride", 5, 10, 1)
+
+        local bossLink = "|cffa335ee|Hitem:1020:0:0:0:0:0:0:0:90:0:0:0|h[Boss Token]|h|r"
+        local bossMessage = "Alice receives loot: " .. bossLink .. "."
+        ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "CHAT_MSG_LOOT", bossMessage, "Alice")
+        ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "CHAT_MSG_LOOT", bossMessage, "Alice")
+        assert(#session.loot == 1 and session.loot[1].bossName == "Sha of Pride")
+        assert(session.loot[1].difficultyTag == "Heroic" and session.loot[1].forgedTag == "Warforged")
+
+        local bonusLink = "|cffa335ee|Hitem:1022:0:0:0:0:0:0:0:90:0:0:0|h[Bonus Item]|h|r"
+        ARC:SessionBonusRollStarted()
+        ARC:SessionBonusRollResult("item", bonusLink, 1)
+        assert(#sent == 1 and sent[1]:find("L1^I^715^1^1^", 1, true) == 1)
+        ARC.Internal.HandleCommMessage("Me-Realm", sent[1])
+        assert(#session.loot == 2 and session.loot[2].bonusResult == "item", "Channel echo must enrich, not duplicate")
+
+        ARC.Internal.HandleCommMessage("Alice-Realm", "L1^N^715^1^1^-")
+        assert(#session.loot == 3 and session.loot[3].bonusResult == "none")
+        ARC.Internal.HandleCommMessage("Alice-Realm", "L1^N^9999^99^1^-")
+        ARC.Internal.HandleCommMessage("Mallory-Realm", "L1^N^715^1^1^-")
+        assert(#session.loot == 3, "Unknown bosses and non-members must not inject bonus loot")
+
+        ARC:StartTrashCombat("NPC-LOOT")
+        gearOverrides[21] = { quality=3 }
+        local rareLink = "|cff0070dd|Hitem:1021:0:0:0:0:0:0:0:90:0:0:0|h[Rare Trash]|h|r"
+        local epicLink = "|cffa335ee|Hitem:1023:0:0:0:0:0:0:0:90:0:0:0|h[Epic Trash]|h|r"
+        ARC:SessionChatLoot("Alice receives loot: " .. rareLink .. ".", "Alice")
+        ARC:SessionChatLoot("Alice receives loot: " .. epicLink .. ".", "Alice")
+        assert(#session.loot == 4
+            and session.loot[4].sourceType == "boss"
+            and session.loot[4].bossName == "Sha of Pride"
+            and session.loot[4].epicOnly
+            and session.loot[4].quality == 4,
+            "Epic trash after a kill should prefer the previous boss context")
+        local pendingLink = "|cffa335ee|Hitem:1001:0:0:0:0:0:0:0:90:0:0:0|h[Uncached Trash]|h|r"
+        cold = true
+        ARC:SessionChatLoot("Alice receives loot: " .. pendingLink .. ".", "Alice")
+        assert(#session.loot == 5 and session.loot[5].metadataPending)
+
+        ARC:ShowSessionReport()
+        ARC.sessionFrame.historyOffset = 0
+        ARC.sessionFrame.tabs.loot.scripts.OnClick()
+        assert(ARC.sessionFrame.lootScroll:IsShown() and not ARC.sessionFrame.playersScroll:IsShown())
+        assert(ARC.sessionFrame.tabs.loot.skinned and ARCSessionLootScrollScrollBar.skinned)
+        local aliceRow
+        for _, row in ipairs(ARC.sessionFrame.lootRows) do
+            if row.playerKey == "Alice-Realm" then aliceRow = row; break end
+        end
+        assert(aliceRow
+            and aliceRow.cells[2]:GetText() == "2"
+            and aliceRow.cells[4]:GetText() == "1"
+            and aliceRow.cells[5]:GetText() == "0")
+        aliceRow.scripts.OnClick(aliceRow)
+        local bossDetail
+        for _, row in ipairs(ARC.sessionFrame.lootRows) do
+            if row.itemButton and row.itemButton.itemLink == bossLink then bossDetail = row; break end
+        end
+        assert(bossDetail and bossDetail.detailTags:GetText():find("Heroic", 1, true))
+        bossDetail.itemButton.scripts.OnEnter(bossDetail.itemButton)
+        assert(GameTooltip.hyperlink == bossLink)
+        bossDetail.itemButton.scripts.OnLeave(bossDetail.itemButton)
+        local report = ARC:GetSessionReportText(session)
+        assert(report:find("LOOT", 1, true) and report:find("Bonus roll - no item", 1, true))
+        assert(report:find(bossLink, 1, true) and not report:find("Rare Trash", 1, true))
+        assert(not report:find("Uncached Trash", 1, true), "Unconfirmed trash quality must stay hidden")
+        assert(ARC:EndRaidSession())
+        assert(#ARC_DB.sessions[1].loot == 4, "Unresolved trash must be discarded when the session ends")
+        cold = false
+        ARC.sessionFrame:Hide()
+    end)
+    units.party1 = nil
+    gearOverrides[21] = nil
+    ARC_DB.sessions = {}
+end)
+
 test("automatic raid sessions survive wipes, stop after leaving and retain only fourteen days", function()
     local inside = false
     withGlobals({
@@ -2258,7 +2387,10 @@ test("automatic raid sessions survive wipes, stop after leaving and retain only 
         for index = 1, 7 do ARC_DB.sessions[#ARC_DB.sessions + 1] = { endedAt=currentWall - index } end
         ARC:InitSessionTracker()
         assert(#ARC_DB.sessions == 7, "Every session within fourteen days must be retained")
-        for _, saved in ipairs(ARC_DB.sessions) do assert(saved.endedAt > currentWall - 14*24*60*60) end
+        for _, saved in ipairs(ARC_DB.sessions) do
+            assert(saved.endedAt > currentWall - 14*24*60*60)
+            assert(saved.version == 3 and type(saved.loot) == "table", "Old sessions must migrate to loot schema v3")
+        end
     end)
     ARC.activeSession, ARC_DB.activeSession, ARC.autoOutsideSince = nil, nil, nil
     ARC_DB.sessions, ARC_DB.autoSessionSuppressedKey = {}, nil

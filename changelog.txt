@@ -13,6 +13,14 @@ v1.8.0 CHANGES
     unavailable or unsafe-to-infer bonuses do not create false failures.
   - Added a versioned ARC_DB schema with guarded, incremental migrations that
     preserve legacy settings, session history and unknown newer-version data.
+  - Hardened addon-channel reports with a 255-byte send guard, protected server
+    calls and duplicate suppression while retaining the 15-second heartbeat.
+  - Added a player-grouped Loot tab to raid sessions with chronological boss
+    rewards, bonus items, empty bonus rolls and epic-only trash drops.
+  - Preserved exact item links for hover tooltips and Shift-click, with best-effort
+    Heroic, Raid Finder, Flexible, Warforged and Thunderforged labels.
+  - Added sender-bound L1 bonus-roll sync, duplicate suppression, a 500-entry
+    session cap and a lossless session-schema v3 migration.
 
 v1.7.0 CHANGES
   - Rebuilt Session Report as sortable Players, expandable Bosses and compact

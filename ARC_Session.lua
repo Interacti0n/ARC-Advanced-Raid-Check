@@ -8,6 +8,9 @@ local SESSION_RETENTION = 14 * 24 * 60 * 60
 local AUTO_EXIT_GRACE = 30
 local MAX_READY_CHECKS = 100
 local MAX_PULLS = 200
+local MAX_LOOT_RECORDS = 500
+local LOOT_DUPLICATE_WINDOW = 1.5
+local SESSION_VERSION = 3
 
 local function WallTime()
     return time and time() or math.floor(GetTime())
@@ -55,29 +58,40 @@ local function RaidInstanceState()
 end
 
 local function UpgradeSession(session)
-    if type(session) ~= "table" or (tonumber(session.version) or 1) >= 2 then return end
-    session.readyCheckCount = session.readyCheckCount or #(session.readyChecks or {})
-    session.readyChecks = nil
-    local firstDeaths = {}
-    local bossDeaths = {}
-    for _, pull in ipairs(session.pulls or {}) do
-        for _, death in ipairs(pull.deaths or {}) do
-            if death.name then bossDeaths[death.name] = (bossDeaths[death.name] or 0) + 1 end
+    if type(session) ~= "table" then return end
+    local version = tonumber(session.version) or 1
+    if version < 2 then
+        session.readyCheckCount = session.readyCheckCount or #(session.readyChecks or {})
+        session.readyChecks = nil
+        local firstDeaths = {}
+        local bossDeaths = {}
+        for _, pull in ipairs(session.pulls or {}) do
+            for _, death in ipairs(pull.deaths or {}) do
+                if death.name then bossDeaths[death.name] = (bossDeaths[death.name] or 0) + 1 end
+            end
+            if pull.firstDeath and pull.firstDeath.name then
+                firstDeaths[pull.firstDeath.name] = (firstDeaths[pull.firstDeath.name] or 0) + 1
+            end
         end
-        if pull.firstDeath and pull.firstDeath.name then
-            firstDeaths[pull.firstDeath.name] = (firstDeaths[pull.firstDeath.name] or 0) + 1
+        for key, member in pairs(session.members or {}) do
+            local shortName = member.name or key
+            member.offlineSeconds = member.offlineSeconds or 0
+            member.bossDeaths = member.bossDeaths or bossDeaths[shortName] or 0
+            member.trashDeaths = member.trashDeaths or 0
+            member.otherDeaths = member.otherDeaths or math.max(0, (member.deaths or 0) - member.bossDeaths)
+            member.firstDeaths = member.firstDeaths or firstDeaths[shortName] or 0
+            member.afkSeconds, member.afkSince = nil, nil
         end
+        version = 2
     end
-    for key, member in pairs(session.members or {}) do
-        local shortName = member.name or key
-        member.offlineSeconds = member.offlineSeconds or 0
-        member.bossDeaths = member.bossDeaths or bossDeaths[shortName] or 0
-        member.trashDeaths = member.trashDeaths or 0
-        member.otherDeaths = member.otherDeaths or math.max(0, (member.deaths or 0) - member.bossDeaths)
-        member.firstDeaths = member.firstDeaths or firstDeaths[shortName] or 0
-        member.afkSeconds, member.afkSince = nil, nil
+    if version < 3 then
+        session.loot = type(session.loot) == "table" and session.loot or {}
+        session.lootSerial = tonumber(session.lootSerial) or #session.loot
+        version = 3
     end
-    session.version = 2
+    if type(session.loot) ~= "table" then session.loot = {} end
+    if type(session.lootSerial) ~= "number" then session.lootSerial = #session.loot end
+    session.version = math.max(version, SESSION_VERSION)
 end
 
 local function PruneSessions()
@@ -118,6 +132,14 @@ function ARC:InitSessionTracker()
     if type(ARC_DB.activeSession) == "table" and not ARC_DB.activeSession.endedAt then
         UpgradeSession(ARC_DB.activeSession)
         self.activeSession = ARC_DB.activeSession
+        for index = #(self.activeSession.pulls or {}), 1, -1 do
+            local pull = self.activeSession.pulls[index]
+            if pull.success then
+                self.lastLootBoss = { encounterID=pull.encounterID, name=pull.name,
+                    difficulty=pull.difficulty, pullIndex=index, at=pull.endedAt, afterTrash=true }
+                break
+            end
+        end
         if ARC_DB.autoSessions then
             local inRaid, key, _, _, instanceID = RaidInstanceState()
             if inRaid then
@@ -185,13 +207,14 @@ function ARC:StartRaidSession(automatic)
     local instance, difficulty, _, instanceID = CurrentLocation()
     local now = WallTime()
     local session = {
-        version = 2, startedAt = now, instance = instance, difficulty = difficulty,
+        version = SESSION_VERSION, startedAt = now, instance = instance, difficulty = difficulty,
         instanceID = instanceID, automatic = automatic and true or false,
         instanceKey = instanceID and tostring(instanceID) or (instance .. ":" .. tostring(difficulty)),
         members = {}, pulls = {}, readyCheckCount = 0,
-        trashCombats = 0, trashCombatSeconds = 0,
+        trashCombats = 0, trashCombatSeconds = 0, loot = {}, lootSerial = 0,
     }
     self.activeSession, self.sessionActivity = session, {}
+    self.lastLootBoss, self.pendingBonusRoll = nil, nil
     ARC_DB.activeSession = session
     self:UpdateSessionRoster()
     print("|cff33ff99ARC:|r raid session started: " .. instance .. ".")
@@ -228,11 +251,13 @@ function ARC:EndRaidSession(reason, endedAt)
     end
     local now = tonumber(endedAt) or WallTime()
     CloseOpenMemberTimes(session, now)
+    if self.ResolveSessionLoot then self:ResolveSessionLoot(session, true) end
     session.endedAt = now
     ARC_DB.sessions[#ARC_DB.sessions + 1] = session
     PruneSessions()
     ARC_DB.activeSession = nil
     self.activeSession, self.sessionActivity, self.currentEncounter = nil, nil, nil
+    self.lastLootBoss, self.pendingBonusRoll = nil, nil
     if reason == nil or reason == "manual" then
         local inRaid, key = RaidInstanceState()
         if inRaid then ARC_DB.autoSessionSuppressedKey = key end
@@ -357,6 +382,7 @@ function ARC:SessionEncounterStart(encounterID, encounterName, difficultyID, gro
     }
     session.pulls[#session.pulls + 1] = pull
     self.currentEncounter = pull
+    self.lastLootBoss = nil
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) and ((not UnitIsConnected) or UnitIsConnected(unit)) then
             local fullName = I.GetUnitIdentity(unit)
@@ -373,6 +399,14 @@ function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, group
     pull.duration = math.max(0, GetTime() - (pull.startedUptime or GetTime()))
     pull.success = tonumber(success) == 1
     self.currentEncounter = nil
+    if pull.success then
+        self.lastLootBoss = {
+            encounterID = pull.encounterID, name = pull.name, difficulty = pull.difficulty,
+            pullIndex = #self.activeSession.pulls, at = WallTime(),
+        }
+    else
+        self.lastLootBoss = nil
+    end
     self:RefreshSessionReport()
 end
 
@@ -386,6 +420,7 @@ function ARC:StartTrashCombat(enemyGUID)
     if enemyGUID then self.trashEnemies[enemyGUID] = true end
     self.trashAllDeadAt = nil
     self.trashPetOwners = {}
+    if self.lastLootBoss then self.lastLootBoss.afterTrash = true end
     self.sessionActivity = self.sessionActivity or {}
     self.sessionInactiveCredited = {}
     for _, unit in ipairs(I.GetGroupUnits()) do
@@ -462,6 +497,315 @@ function ARC:TickTrashInactivity()
     elseif self.trashLastEvidence and wallNow - self.trashLastEvidence >= TRASH_IDLE_END_AFTER then
         self:EndTrashCombat(self.trashLastEvidence)
     end
+end
+
+--=============================================================================
+-- SESSION LOOT
+--=============================================================================
+
+local function ExtractItemLink(text)
+    if type(text) ~= "string" then return nil end
+    local link = text:match("(|c%x%x%x%x%x%x%x%x|Hitem:[^|]+|h%[.-%]|h|r)") or
+        text:match("(|Hitem:[^|]+|h%[.-%]|h)")
+    if not link or #link > 220 or link:find("^", 1, true) or link:find("[\r\n]") then return nil end
+    return link
+end
+
+local function ItemIDFromLink(link)
+    return type(link) == "string" and tonumber(link:match("|Hitem:(%-?%d+)")) or nil
+end
+
+local function FormatToPattern(formatText)
+    if type(formatText) ~= "string" or formatText == "" then return nil end
+    local stringToken, numberToken = "\001", "\002"
+    local text = formatText:gsub("%%%d+%$s", stringToken):gsub("%%%d+%$d", numberToken)
+    text = text:gsub("%%s", stringToken):gsub("%%d", numberToken)
+    text = text:gsub("([%(%)%.%%%+%-%*%?%[%]%^%$])", "%%%1")
+    text = text:gsub(stringToken, "(.-)"):gsub(numberToken, "(%%d+)")
+    return "^" .. text .. "$"
+end
+
+local function MatchLootFormat(message, formatText, own, multiple, bonus)
+    local pattern = FormatToPattern(formatText)
+    if not pattern then return nil end
+    local a, b, c = message:match(pattern)
+    if not a then return nil end
+    if own then
+        return { own=true, itemLink=ExtractItemLink(a), quantity=multiple and tonumber(b) or 1, bonus=bonus }
+    end
+    return { player=a, itemLink=ExtractItemLink(b), quantity=multiple and tonumber(c) or 1, bonus=bonus }
+end
+
+local function ParseLootMessage(message, eventSender)
+    if type(message) ~= "string" then return nil end
+    local formats = {
+        { "LOOT_ITEM_BONUS_ROLL_SELF_MULTIPLE", true, true, true },
+        { "LOOT_ITEM_BONUS_ROLL_MULTIPLE", false, true, true },
+        { "LOOT_ITEM_BONUS_ROLL_SELF", true, false, true },
+        { "LOOT_ITEM_BONUS_ROLL", false, false, true },
+        { "LOOT_ITEM_SELF_MULTIPLE", true, true, false },
+        { "LOOT_ITEM_MULTIPLE", false, true, false },
+        { "LOOT_ITEM_PUSHED_SELF_MULTIPLE", true, true, false },
+        { "LOOT_ITEM_PUSHED_MULTIPLE", false, true, false },
+        { "LOOT_ITEM_SELF", true, false, false },
+        { "LOOT_ITEM", false, false, false },
+        { "LOOT_ITEM_PUSHED_SELF", true, false, false },
+        { "LOOT_ITEM_PUSHED", false, false, false },
+    }
+    for _, candidate in ipairs(formats) do
+        local result = MatchLootFormat(message, _G[candidate[1]], candidate[2], candidate[3], candidate[4])
+        if result and result.itemLink then return result end
+    end
+    local link = ExtractItemLink(message)
+    if link and type(eventSender) == "string" and eventSender ~= "" then
+        return { player=eventSender, itemLink=link, quantity=1, bonus=false }
+    end
+end
+
+local function CleanPlayerName(name)
+    if type(name) ~= "string" then return nil end
+    name = name:match("|Hplayer:([^:|]+)") or name:match("%[([^%]]+)%]") or name
+    name = name:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("%s+", "")
+    return name ~= "" and name or nil
+end
+
+local function FindSessionMember(session, name, own)
+    if own then name = I.GetUnitIdentity("player") end
+    name = CleanPlayerName(name)
+    if not name then return nil end
+    local lowered, matched = name:lower(), nil
+    for key, member in pairs(session.members or {}) do
+        local full = tostring(key):gsub("%s+", ""):lower()
+        local short = tostring(member.name or ""):gsub("%s+", ""):lower()
+        if full == lowered then return key end
+        if short == lowered or full:match("^" .. lowered:gsub("([^%w])", "%%%1") .. "%-") then
+            if matched then return nil end
+            matched = key
+        end
+    end
+    return matched
+end
+
+local function BossContext(session, encounterID, pullIndex)
+    encounterID, pullIndex = tonumber(encounterID), tonumber(pullIndex)
+    local pull = pullIndex and session.pulls and session.pulls[pullIndex]
+    if pull and pull.success and (not encounterID or encounterID == 0 or pull.encounterID == encounterID) then
+        return { encounterID=pull.encounterID, name=pull.name, difficulty=pull.difficulty, pullIndex=pullIndex }
+    end
+    for index = #(session.pulls or {}), 1, -1 do
+        pull = session.pulls[index]
+        if pull.success and (not encounterID or encounterID == 0 or pull.encounterID == encounterID) then
+            return { encounterID=pull.encounterID, name=pull.name, difficulty=pull.difficulty, pullIndex=index }
+        end
+    end
+end
+
+local lootScanTip
+local function HasTooltipLabel(text, fallback, ...)
+    if text:find(fallback:lower(), 1, true) then return true end
+    for index = 1, select("#", ...) do
+        local label = select(index, ...)
+        if type(label) == "string" and label ~= "" and text:find(label:lower(), 1, true) then return true end
+    end
+    return false
+end
+
+local function TooltipVariant(link)
+    if not CreateFrame then return nil, nil end
+    if not lootScanTip then
+        local ok, tip = pcall(CreateFrame, "GameTooltip", "ARCSessionLootScanTooltip", nil, "GameTooltipTemplate")
+        if ok then lootScanTip = tip end
+    end
+    if not lootScanTip or not lootScanTip.SetHyperlink then return nil, nil end
+    if lootScanTip.ClearLines then lootScanTip:ClearLines() end
+    if lootScanTip.SetOwner then pcall(lootScanTip.SetOwner, lootScanTip, UIParent, "ANCHOR_NONE") end
+    local ok = pcall(lootScanTip.SetHyperlink, lootScanTip, link)
+    if not ok then return nil, nil end
+    local text = {}
+    for index = 1, 20 do
+        local line = _G["ARCSessionLootScanTooltipTextLeft" .. index]
+        if line and line.GetText then
+            local lineOK, value = pcall(line.GetText, line)
+            if lineOK and value then text[#text + 1] = value:lower() end
+        end
+    end
+    local joined = table.concat(text, " ")
+    local heroic = HasTooltipLabel(joined, "heroic", _G.ITEM_HEROIC, _G.PLAYER_DIFFICULTY2) and true or nil
+    local forged
+    if HasTooltipLabel(joined, "warforged", _G.ITEM_WARFORGED, _G.WARFORGED) then forged = "Warforged"
+    elseif HasTooltipLabel(joined, "thunderforged", _G.ITEM_THUNDERFORGED, _G.THUNDERFORGED) then forged = "Thunderforged" end
+    return heroic, forged
+end
+
+local function ResolveLootMetadata(entry)
+    if not entry.itemLink then return true end
+    local itemInfo = type(GetItemInfo) == "function" and { pcall(GetItemInfo, entry.itemLink) } or nil
+    if itemInfo and itemInfo[1] and itemInfo[2] then
+        entry.itemName = itemInfo[2]
+        entry.quality = tonumber(itemInfo[4])
+        entry.itemLevel = tonumber(itemInfo[5])
+        entry.texture = itemInfo[11]
+    end
+    if not entry.texture and type(GetItemIcon) == "function" then
+        local ok, texture = pcall(GetItemIcon, entry.itemID or entry.itemLink)
+        if ok then entry.texture = texture end
+    end
+    local heroic, forged = TooltipVariant(entry.itemLink)
+    if heroic then entry.difficultyTag = "Heroic"
+    elseif entry.sourceType == "boss" then
+        if entry.difficulty == 5 or entry.difficulty == 6 then entry.difficultyTag = "Heroic"
+        elseif entry.difficulty == 7 then entry.difficultyTag = "Raid Finder"
+        elseif entry.difficulty == 14 then entry.difficultyTag = "Flexible"
+        elseif entry.difficulty == 3 or entry.difficulty == 4 then entry.difficultyTag = "Normal" end
+    end
+    if forged then entry.forgedTag = forged end
+    entry.metadataPending = not entry.itemName or not entry.quality
+    return not entry.metadataPending
+end
+
+function ARC:ResolveSessionLoot(session, final)
+    session = session or self.activeSession
+    if not session or type(session.loot) ~= "table" then return end
+    for index = #session.loot, 1, -1 do
+        local entry = session.loot[index]
+        if type(entry) ~= "table" then
+            table.remove(session.loot, index)
+        elseif entry.itemLink then
+            ResolveLootMetadata(entry)
+            if entry.epicOnly and ((entry.quality and entry.quality < 4) or (final and not entry.quality)) then
+                table.remove(session.loot, index)
+            end
+        end
+    end
+end
+
+function ARC:RecordSessionLoot(playerKey, itemLink, quantity, bonus, context, origin)
+    local session = self.activeSession
+    if not session or not session.members or not session.members[playerKey] then return nil end
+    session.loot = type(session.loot) == "table" and session.loot or {}
+    if #session.loot >= MAX_LOOT_RECORDS then return nil end
+    if itemLink and (not ExtractItemLink(itemLink) or not ItemIDFromLink(itemLink)) then return nil end
+    quantity = math.max(1, math.min(99, tonumber(quantity) or 1))
+    local now, sourceType = WallTime(), context and "boss" or (bonus and "unknown" or "trash")
+    local epicOnly = (not bonus) and (sourceType == "trash" or (context and context.afterTrash))
+
+    -- One player can consume only one bonus roll for a recorded boss kill.
+    -- Prefer an eventual item result over an earlier empty/partial result.
+    if bonus and context and context.pullIndex then
+        for index = #session.loot, 1, -1 do
+            local prior = session.loot[index]
+            if prior and prior.player == playerKey and prior.pullIndex == context.pullIndex and prior.bonusResult then
+                if itemLink and not prior.itemLink then
+                    prior.itemLink, prior.itemID, prior.quantity, prior.bonusResult =
+                        itemLink, ItemIDFromLink(itemLink), quantity, "item"
+                    ResolveLootMetadata(prior)
+                end
+                return prior
+            end
+        end
+    end
+
+    for index = #session.loot, math.max(1, #session.loot - 20), -1 do
+        local prior = session.loot[index]
+        local sameReward = prior and ((itemLink and prior.itemLink == itemLink) or
+            (not itemLink and not prior.itemLink and prior.bonusResult == bonus))
+        if sameReward and prior.player == playerKey and math.abs(now - (prior.at or now)) <= LOOT_DUPLICATE_WINDOW then
+            if bonus then prior.bonusResult = bonus end
+            if context and prior.sourceType ~= "boss" then
+                prior.sourceType, prior.bossName, prior.encounterID, prior.difficulty, prior.pullIndex =
+                    "boss", context.name, context.encounterID, context.difficulty, context.pullIndex
+            end
+            return prior
+        end
+    end
+
+    session.lootSerial = (tonumber(session.lootSerial) or 0) + 1
+    local entry = {
+        id=session.lootSerial, at=now, player=playerKey, itemLink=itemLink,
+        itemID=ItemIDFromLink(itemLink), quantity=quantity, bonusResult=bonus,
+        sourceType=sourceType, origin=origin,
+        epicOnly=epicOnly and true or nil,
+        bossName=context and context.name or nil, encounterID=context and context.encounterID or nil,
+        difficulty=context and context.difficulty or nil, pullIndex=context and context.pullIndex or nil,
+    }
+    ResolveLootMetadata(entry)
+    if entry.epicOnly and entry.quality and entry.quality < 4 then return nil end
+    session.loot[#session.loot + 1] = entry
+    self:RefreshSessionReport()
+    return entry
+end
+
+function ARC:SessionChatLoot(message, eventSender)
+    local session = self.activeSession
+    if not session then return end
+    local parsed = ParseLootMessage(message, eventSender)
+    if not parsed then return end
+    local playerKey = FindSessionMember(session, parsed.player, parsed.own)
+    if not playerKey then return end
+    local context = self.lastLootBoss
+    self:RecordSessionLoot(playerKey, parsed.itemLink, parsed.quantity,
+        parsed.bonus and "item" or nil, context, "chat")
+end
+
+local function OwnMemberKey(session)
+    local own = I.GetUnitIdentity("player")
+    return own and FindSessionMember(session, own, false) or nil
+end
+
+function ARC:SessionBonusRollStarted()
+    if not self.activeSession then return end
+    local context = self.lastLootBoss or BossContext(self.activeSession)
+    self.pendingBonusRoll = { startedAt=GetTime(), context=context }
+end
+
+function ARC:SessionBonusRollFailed()
+    self.pendingBonusRoll = nil
+end
+
+function ARC:SessionBonusRollResult(...)
+    local session, pending = self.activeSession, self.pendingBonusRoll
+    if not session or not pending then return end
+    local args, itemLink, quantity = { ... }, nil, 1
+    for index, value in ipairs(args) do
+        local link = ExtractItemLink(value)
+        if link then
+            itemLink = link
+            quantity = tonumber(args[index + 1]) or 1
+            break
+        end
+    end
+    local playerKey = OwnMemberKey(session)
+    if playerKey then
+        local result = itemLink and "item" or "none"
+        local entry = self:RecordSessionLoot(playerKey, itemLink, quantity, result, pending.context, "bonus")
+        if entry then
+            local context = pending.context or {}
+            local code = itemLink and "I" or "N"
+            local payload = table.concat({ "L1", code, tostring(context.encounterID or 0),
+                tostring(context.pullIndex or 0), tostring(quantity), itemLink or "-" }, "^")
+            self:SendAddonPayload(payload)
+        end
+    end
+    self.pendingBonusRoll = nil
+end
+
+function ARC:HandleSessionLootComm(sender, message)
+    local session = self.activeSession
+    if not session or type(message) ~= "string" then return end
+    local protocol, code, encounterID, pullIndex, quantity, itemLink = strsplit("^", message)
+    if protocol ~= "L1" or (code ~= "I" and code ~= "N") then return end
+    local playerKey = FindSessionMember(session, sender, false)
+    if not playerKey then return end
+    local currentMember = false
+    for _, unit in ipairs(I.GetGroupUnits()) do
+        if UnitExists(unit) and I.GetUnitIdentity(unit) == playerKey then currentMember = true; break end
+    end
+    if not currentMember then return end
+    local context = BossContext(session, encounterID, pullIndex)
+    if not context then return end
+    if code == "N" then itemLink = nil
+    elseif not ExtractItemLink(itemLink) then return end
+    self:RecordSessionLoot(playerKey, itemLink, quantity, code == "I" and "item" or "none", context, "comm")
 end
 
 local ACTIVE_EVENTS = {
@@ -618,8 +962,38 @@ local function DeathBreakdown(member)
     return total, boss, trash, other, member.firstDeaths or 0
 end
 
+local function LootSource(entry)
+    if entry.sourceType == "boss" then return entry.bossName or "Unknown boss" end
+    if entry.sourceType == "trash" then return "Trash" end
+    return "Unknown source"
+end
+
+local function LootTags(entry)
+    local tags = {}
+    if entry.difficultyTag then tags[#tags + 1] = entry.difficultyTag end
+    if entry.forgedTag then tags[#tags + 1] = entry.forgedTag end
+    if entry.bonusResult == "item" then tags[#tags + 1] = "Bonus" end
+    if entry.sourceType == "trash" then tags[#tags + 1] = "Epic trash" end
+    return table.concat(tags, " / ")
+end
+
+local function LootCounts(session, playerKey)
+    local boss, bonusItems, bonusEmpty, trash = 0, 0, 0, 0
+    for _, entry in ipairs(session.loot or {}) do
+        if (not playerKey or entry.player == playerKey) and
+            (not entry.epicOnly or (entry.quality and entry.quality >= 4)) then
+            if entry.bonusResult == "none" then bonusEmpty = bonusEmpty + 1
+            elseif entry.sourceType == "trash" then trash = trash + 1
+            else boss = boss + 1 end
+            if entry.bonusResult == "item" then bonusItems = bonusItems + 1 end
+        end
+    end
+    return boss, bonusItems, bonusEmpty, trash
+end
+
 local function BuildReport(session)
     if not session then return "No raid session recorded yet." end
+    ARC:ResolveSessionLoot(session)
     local ended = session.endedAt or WallTime()
     local _, uniqueKills, bossSeconds = SessionStats(session)
     local lines = {
@@ -649,6 +1023,35 @@ local function BuildReport(session)
         lines[#lines + 1] = string.format("%d. %s | %s | %s%s", index, pull.name or "Unknown", result, FormatDuration(pull.duration or 0), death)
     end
     lines[#lines + 1] = ""
+    lines[#lines + 1] = "LOOT"
+    local bossLoot, bonusItems, bonusEmpty, trashLoot = LootCounts(session)
+    lines[#lines + 1] = string.format("Boss items: %d | bonus items: %d | empty bonus rolls: %d | trash epics: %d",
+        bossLoot, bonusItems, bonusEmpty, trashLoot)
+    local lootMembers = {}
+    for key, member in pairs(session.members or {}) do lootMembers[#lootMembers + 1] = { key=key, member=member } end
+    table.sort(lootMembers, function(a, b) return (a.member.name or a.key) < (b.member.name or b.key) end)
+    for _, data in ipairs(lootMembers) do
+        local key, member = data.key, data.member
+        local playerLoot = {}
+        for _, entry in ipairs(session.loot or {}) do
+            if entry.player == key and (not entry.epicOnly or (entry.quality and entry.quality >= 4)) then
+                playerLoot[#playerLoot + 1] = entry
+            end
+        end
+        table.sort(playerLoot, function(a, b) return (a.at or 0) == (b.at or 0) and (a.id or 0) < (b.id or 0) or (a.at or 0) < (b.at or 0) end)
+        if #playerLoot > 0 then
+            lines[#lines + 1] = member.name or key
+            for _, entry in ipairs(playerLoot) do
+                local reward = entry.bonusResult == "none" and "Bonus roll - no item" or
+                    (entry.itemLink or entry.itemName or ("Item " .. tostring(entry.itemID or "?")))
+                local tags = LootTags(entry)
+                lines[#lines + 1] = string.format("  %s | %s | %s%s",
+                    date and date("%H:%M", entry.at or 0) or tostring(entry.at or "?"), LootSource(entry), reward,
+                    tags ~= "" and (" | " .. tags) or "")
+            end
+        end
+    end
+    lines[#lines + 1] = ""
     lines[#lines + 1] = string.format("Trash idle is estimated after %ds without personal activity; pet-only activity never credits its owner.", INACTIVE_AFTER)
     return table.concat(lines, "\n")
 end
@@ -670,6 +1073,12 @@ local BOSS_COLUMNS = {
     { label="Boss", x=0, width=220 }, { label="Attempts", x=220, width=80 },
     { label="Result", x=300, width=90 }, { label="Combat time", x=390, width=100 },
     { label="First deaths", x=490, width=155 },
+}
+
+local LOOT_COLUMNS = {
+    { label="Player", x=0, width=245 }, { label="Boss items", x=245, width=90 },
+    { label="Bonus items", x=335, width=100 }, { label="Empty rolls", x=435, width=110 },
+    { label="Trash epics", x=545, width=100 },
 }
 
 local function SetCell(cell, text, r, g, b)
@@ -903,6 +1312,158 @@ local function RenderBosses(frame, session)
     frame.bossesChild:SetHeight(math.max(1, (line + 1) * 23 + 4))
 end
 
+local function EnsureLootRow(frame, index)
+    frame.lootRows = frame.lootRows or {}
+    local row = frame.lootRows[index]
+    if row then return row end
+    row = CreateFrame("Button", nil, frame.lootChild)
+    row:SetSize(645, 23)
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    CreateCells(row, LOOT_COLUMNS)
+
+    row.detailSource = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.detailSource:SetPoint("LEFT", row, "LEFT", 16, 0)
+    row.detailSource:SetWidth(174)
+    row.detailSource:SetJustifyH("LEFT")
+    row.itemButton = CreateFrame("Button", nil, row)
+    row.itemButton:SetPoint("LEFT", row, "LEFT", 194, 0)
+    row.itemButton:SetSize(20, 20)
+    row.itemButton:EnableMouse(true)
+    row.itemTexture = row.itemButton:CreateTexture(nil, "ARTWORK")
+    row.itemTexture:SetAllPoints()
+    row.itemTexture:SetDrawLayer("ARTWORK", 7)
+    row.itemTexture:SetAlpha(1)
+    row.detailName = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.detailName:SetPoint("LEFT", row, "LEFT", 220, 0)
+    row.detailName:SetWidth(294)
+    row.detailName:SetJustifyH("LEFT")
+    row.detailTags = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.detailTags:SetPoint("LEFT", row, "LEFT", 520, 0)
+    row.detailTags:SetWidth(121)
+    row.detailTags:SetJustifyH("LEFT")
+    row.itemButton:SetScript("OnEnter", function(self)
+        if not self.itemLink then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.itemLink)
+        if not ok then GameTooltip:AddLine("Item tooltip unavailable.", 1, 0.78, 0.2) end
+        GameTooltip:Show()
+    end)
+    row.itemButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    row.itemButton:SetScript("OnClick", function(self)
+        if self.itemLink and IsShiftKeyDown and IsShiftKeyDown() and ChatEdit_InsertLink then
+            pcall(ChatEdit_InsertLink, self.itemLink)
+        end
+    end)
+    row:SetScript("OnClick", function(self)
+        if not self.playerKey then return end
+        frame.expandedLootPlayer = frame.expandedLootPlayer == self.playerKey and nil or self.playerKey
+        ARC:RefreshSessionReport()
+    end)
+    frame.lootRows[index] = row
+    return row
+end
+
+local function SetLootRowMode(row, detail)
+    for _, cell in ipairs(row.cells or {}) do I.SetFrameShown(cell, not detail) end
+    I.SetFrameShown(row.detailSource, detail)
+    I.SetFrameShown(row.itemButton, detail)
+    I.SetFrameShown(row.detailName, detail)
+    I.SetFrameShown(row.detailTags, detail)
+    if not detail then
+        row.itemButton.itemLink = nil
+        if GameTooltip.IsOwned and GameTooltip:IsOwned(row.itemButton) then GameTooltip:Hide() end
+    end
+end
+
+local function LootItemName(entry)
+    return entry.itemName or (entry.itemLink and entry.itemLink:match("|h%[(.-)%]|h")) or
+        (entry.itemID and ("Item " .. entry.itemID)) or "Bonus roll - no item"
+end
+
+local function LootItemColor(entry)
+    if type(GetItemQualityColor) == "function" and entry.quality then
+        local ok, r, g, b = pcall(GetItemQualityColor, entry.quality)
+        if ok and r then return r, g, b end
+    end
+    if entry.quality == 5 then return 1, 0.5, 0 end
+    if entry.quality == 4 then return 0.64, 0.21, 0.93 end
+    return 0.9, 0.9, 0.9
+end
+
+local function RenderLoot(frame, session)
+    ARC:ResolveSessionLoot(session)
+    local header = EnsureHeader(frame, "loot", LOOT_COLUMNS)
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", 0, 0)
+    header:Show()
+    local grouped = {}
+    for _, entry in ipairs(session.loot or {}) do
+        if not entry.epicOnly or (entry.quality and entry.quality >= 4) then
+            grouped[entry.player] = grouped[entry.player] or {}
+            grouped[entry.player][#grouped[entry.player] + 1] = entry
+        end
+    end
+    local members = {}
+    for key, member in pairs(session.members or {}) do members[#members + 1] = { key=key, member=member } end
+    table.sort(members, function(a, b) return (a.member.name or a.key) < (b.member.name or b.key) end)
+    local line = 0
+    for _, data in ipairs(members) do
+        local playerLoot = grouped[data.key] or {}
+        table.sort(playerLoot, function(a, b)
+            if (a.at or 0) == (b.at or 0) then return (a.id or 0) < (b.id or 0) end
+            return (a.at or 0) < (b.at or 0)
+        end)
+        line = line + 1
+        local row = EnsureLootRow(frame, line)
+        SetLootRowMode(row, false)
+        row.playerKey = data.key
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -(line * 23 + 1))
+        row.bg:SetTexture(1, 1, 1, line % 2 == 0 and 0.05 or 0.025)
+        local classColor = data.member.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[data.member.class]
+        SetCell(row.cells[1], (frame.expandedLootPlayer == data.key and "- " or "+ ") ..
+            (data.member.name or data.key), classColor and classColor.r or 1,
+            classColor and classColor.g or 1, classColor and classColor.b or 1)
+        local boss, bonusItems, bonusEmpty, trash = LootCounts(session, data.key)
+        SetCell(row.cells[2], tostring(boss))
+        SetCell(row.cells[3], tostring(bonusItems))
+        SetCell(row.cells[4], tostring(bonusEmpty))
+        SetCell(row.cells[5], tostring(trash))
+        row:Show()
+
+        if frame.expandedLootPlayer == data.key then
+            for _, entry in ipairs(playerLoot) do
+                line = line + 1
+                local detail = EnsureLootRow(frame, line)
+                SetLootRowMode(detail, true)
+                detail.playerKey = nil
+                detail:ClearAllPoints()
+                detail:SetPoint("TOPLEFT", 0, -(line * 23 + 1))
+                detail.bg:SetTexture(0.2, 0.6, 1, 0.05)
+                local timeText = date and date("%H:%M", entry.at or 0) or "?"
+                SetCell(detail.detailSource, timeText .. "  " .. LootSource(entry), 0.72, 0.82, 1)
+                detail.itemButton.itemLink = entry.itemLink
+                detail.itemTexture:SetTexture(entry.texture or (entry.itemLink and
+                    "Interface\\Icons\\INV_Misc_QuestionMark" or "Interface\\Icons\\INV_Misc_Coin_01"))
+                local r, g, b = LootItemColor(entry)
+                local name = LootItemName(entry) .. ((entry.quantity or 1) > 1 and (" x" .. entry.quantity) or "")
+                SetCell(detail.detailName, name, r, g, b)
+                local tags = LootTags(entry)
+                if entry.metadataPending then tags = tags ~= "" and (tags .. " / Loading") or "Loading" end
+                SetCell(detail.detailTags, tags, 1, 0.82, 0.2)
+                detail:Show()
+            end
+        end
+    end
+    for index = line + 1, #(frame.lootRows or {}) do
+        SetLootRowMode(frame.lootRows[index], false)
+        frame.lootRows[index]:Hide()
+    end
+    frame.lootChild:SetHeight(math.max(1, (line + 1) * 23 + 4))
+end
+
 local function BuildSessionFrame()
     local frame = CreateFrame("Frame", "ARCSessionReportFrame", UIParent)
     frame:SetSize(720, 560)
@@ -943,6 +1504,7 @@ local function BuildSessionFrame()
     end
     frame.playersScroll, frame.playersChild = CreateTableScroll("ARCSessionPlayersScroll")
     frame.bossesScroll, frame.bossesChild = CreateTableScroll("ARCSessionBossesScroll")
+    frame.lootScroll, frame.lootChild = CreateTableScroll("ARCSessionLootScroll")
     local scroll = CreateFrame("ScrollFrame", "ARCSessionExportScroll", frame, "UIPanelScrollFrameTemplate")
     scroll:SetPoint("TOPLEFT", 18, -132)
     scroll:SetPoint("BOTTOMRIGHT", -34, 52)
@@ -979,7 +1541,8 @@ local function BuildSessionFrame()
     end
     local playersTab = AddTab("players", "Players")
     local bossesTab = AddTab("bosses", "Bosses", playersTab, 6)
-    local exportTab = AddTab("export", "Export", bossesTab, 6)
+    local lootTab = AddTab("loot", "Loot", bossesTab, 6)
+    local exportTab = AddTab("export", "Export", lootTab, 6)
 
     frame.toggle = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.toggle:SetSize(130, 22)
@@ -1023,8 +1586,9 @@ local function BuildSessionFrame()
         ARC:RequestDeleteRaidSession(ARC:GetReportSession(frame.historyOffset))
     end)
     frame.scroll = scroll
-    frame.scrolls = { frame.playersScroll, frame.bossesScroll, scroll }
-    frame.buttons = { frame.toggle, frame.select, frame.previous, frame.next, frame.refresh, frame.delete, playersTab, bossesTab, exportTab }
+    frame.scrolls = { frame.playersScroll, frame.bossesScroll, frame.lootScroll, scroll }
+    frame.buttons = { frame.toggle, frame.select, frame.previous, frame.next, frame.refresh, frame.delete,
+        playersTab, bossesTab, lootTab, exportTab }
     frame.historyOffset = 0
     frame:Hide()
     return frame
@@ -1084,16 +1648,20 @@ function ARC:RefreshSessionReport(session)
             ReadyCheckCount(selected), FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(selected))))
         RenderPlayers(frame, selected)
         RenderBosses(frame, selected)
+        RenderLoot(frame, selected)
     else
         frame.summary:SetText("No raid session recorded yet.")
         if frame.playersHeader then frame.playersHeader:Hide() end
         if frame.bossesHeader then frame.bossesHeader:Hide() end
+        if frame.lootHeader then frame.lootHeader:Hide() end
         for _, row in ipairs(frame.playerRows or {}) do row:Hide() end
         for _, row in ipairs(frame.bossRows or {}) do row:Hide() end
+        for _, row in ipairs(frame.lootRows or {}) do row:Hide() end
     end
     local tab = frame.activeTab or "players"
     I.SetFrameShown(frame.playersScroll, tab == "players")
     I.SetFrameShown(frame.bossesScroll, tab == "bosses")
+    I.SetFrameShown(frame.lootScroll, tab == "loot")
     I.SetFrameShown(frame.scroll, tab == "export")
     I.SetFrameShown(frame.select, tab == "export")
     I.SetFrameShown(frame.delete, selected and selected ~= self.activeSession)
@@ -1114,8 +1682,14 @@ function ARC:ShowSessionReport()
 end
 
 local tracker = CreateFrame("Frame", "ARCSessionEventFrame")
-for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "GROUP_ROSTER_UPDATE", "PLAYER_FLAGS_CHANGED", "ENCOUNTER_START", "ENCOUNTER_END", "COMBAT_LOG_EVENT_UNFILTERED" }) do
+for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "GROUP_ROSTER_UPDATE", "PLAYER_FLAGS_CHANGED",
+    "ENCOUNTER_START", "ENCOUNTER_END", "COMBAT_LOG_EVENT_UNFILTERED", "CHAT_MSG_LOOT" }) do
     tracker:RegisterEvent(event)
+end
+-- These are native MoP events, but a protected registration keeps unusual
+-- private-server client forks from preventing the entire session module load.
+for _, event in ipairs({ "BONUS_ROLL_STARTED", "BONUS_ROLL_RESULT", "BONUS_ROLL_FAILED" }) do
+    pcall(tracker.RegisterEvent, tracker, event)
 end
 tracker:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
@@ -1130,6 +1704,14 @@ tracker:SetScript("OnEvent", function(_, event, ...)
         ARC:SessionEncounterEnd(...)
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         ARC:SessionCombatLog(...)
+    elseif event == "CHAT_MSG_LOOT" then
+        ARC:SessionChatLoot(...)
+    elseif event == "BONUS_ROLL_STARTED" then
+        ARC:SessionBonusRollStarted(...)
+    elseif event == "BONUS_ROLL_RESULT" then
+        ARC:SessionBonusRollResult(...)
+    elseif event == "BONUS_ROLL_FAILED" then
+        ARC:SessionBonusRollFailed(...)
     end
 end)
 tracker:SetScript("OnUpdate", function(_, elapsed)
@@ -1139,6 +1721,7 @@ tracker:SetScript("OnUpdate", function(_, elapsed)
         tracker.elapsed = 0
         ARC:TickTrashInactivity()
         ARC:UpdateAutoSession()
+        ARC:ResolveSessionLoot()
     end
     if tracker.rosterElapsed >= 5 then
         tracker.rosterElapsed = 0

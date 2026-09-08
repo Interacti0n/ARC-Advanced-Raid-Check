@@ -54,6 +54,18 @@ equipment and does not trust missing fields as failures. Messages remain
 sender-bound, freshness-limited and backward-compatible; unknown fields from
 older peers stay unverified.
 
+The caret-separated wire format remains uncompressed for legacy-client
+compatibility and is normally far below the 255-byte MoP limit. ARC validates
+that limit before sending, protects the private-server send API, suppresses
+unchanged event-driven payloads and retains a 15-second heartbeat. Compression
+or message chunking should only be introduced if a future protocol expansion
+can no longer stay comfortably within that bound.
+
+Readiness snapshots keep their original format. Session bonus rolls use a
+separate compact `L1` message under the same `ARC1` prefix. Dispatch occurs
+before readiness parsing, and the session module validates the channel sender,
+matching local boss pull, item hyperlink and per-session limits.
+
 See [Data sources and limitations](DATA_AND_LIMITATIONS.md) and
 [Readiness checks](READINESS_CHECKS.md) for the public behavior and protocol
 freshness rules.
