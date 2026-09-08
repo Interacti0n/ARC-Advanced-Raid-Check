@@ -53,8 +53,8 @@ for talents, tank stances/Righteous Fury, pets, Growl, Sacrifice, Shaman imbues,
 Healthstones and mixed-version peers.
 
 For session reporting, follow the [session live checklist](SESSION_REPORT.md)
-and specifically confirm that trash inactivity begins after ten seconds,
-includes the initial ten seconds once crossed, and resets on recorded activity.
+and specifically confirm that trash inactivity begins after five seconds,
+includes the initial five seconds once crossed, and resets on recorded activity.
 
 ## Developer checks
 

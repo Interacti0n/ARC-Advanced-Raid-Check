@@ -162,7 +162,7 @@ function GetItemInfo(link)
     end
     if cold and id == 1001 then return nil end
     local item = gearOverrides[id - 1000] or {}
-    return "Item " .. id, link, item.quality or 4, item.level or (id == 1001 and 440 or 500), 90, "Armor", "Cloth", 1,
+    return "Item " .. id, link, item.quality or 4, item.level or (id == 1001 and 440 or 500), 90, "Armor", item.subType, 1,
         item.equipLoc or (id == 1016 and "INVTYPE_2HWEAPON" or "INVTYPE_HEAD")
 end
 function GetItemStats(link)
@@ -288,6 +288,15 @@ ARCEventFrame.scripts.OnEvent(ARCEventFrame, "ADDON_LOADED", "Blizzard_InspectUI
 local button = assert(InspectFrame.arcCheckButton)
 ARC:AttachInspectCheckButton()
 assert(InspectFrame.arcCheckButton == button, "Must not duplicate button")
+CharacterFrame = CreateFrame("Frame", "CharacterFrame")
+CharacterFrame:SetSize(338, 424)
+CharacterFrameTitleText = CharacterFrame:CreateFontString("CharacterFrameTitleText")
+CharacterFrameTitleText:SetText("Character Info")
+CharacterFrame:Hide()
+ARCEventFrame.scripts.OnEvent(ARCEventFrame, "ADDON_LOADED", "Blizzard_CharacterUI")
+local characterButton = assert(CharacterFrame.arcCheckButton)
+ARC:AttachCharacterCheckButton()
+assert(CharacterFrame.arcCheckButton == characterButton, "Must not duplicate Character Info button")
 
 local function step(seconds)
     now = now + (seconds or 3)
@@ -345,6 +354,21 @@ test("inspect header supports TitleText forks and a missing title widget", funct
     InspectFrameTitleText = title
 end)
 
+test("Character Info button is in the header and opens a local self-check", function()
+    local anchor = characterButton.points[1]
+    assert(characterButton.parent == CharacterFrame and characterButton.width == 74 and characterButton.height == 18)
+    assert(#characterButton.points == 1 and anchor[1] == "TOPLEFT" and anchor[2] == CharacterFrame)
+    assert(anchor[3] == "TOPLEFT" and anchor[4] == 68 and anchor[5] == -5)
+    assert(#CharacterFrameTitleText.points == 2 and CharacterFrameTitleText.points[1][2] == characterButton)
+    local calls = notifyCount
+    characterButton.scripts.OnClick(characterButton)
+    assert(ARC.playerCheckFrame:IsShown() and ARC.playerCheckFrame.entry.guid == "SELF")
+    assert(not ARC.playerCheckFrame.busy and notifyCount == calls)
+    ARC.playerCheckFrame:Hide()
+    CharacterFrame:Show()
+    assert(#characterButton.points == 1 and #CharacterFrameTitleText.points == 2)
+end)
+
 test("non-group report shows ordered identity and only problem slots", function()
     local f = start()
     assert(f.busy and not f.entry.gear)
@@ -393,6 +417,16 @@ test("unknown spec is not presented as verified primary stats", function()
     local f = start(); specMissing = true; step(); ARC.OnInspectReady("A")
     assert(f.entry.gear.scanned and not f.entry.gear.expectedPrimary)
     assert(contents(f):find("not evaluated", 1, true))
+end)
+test("remote inspect spec API errors degrade to unverified", function()
+    local f = start(); step()
+    local oldInspectSpec, oldSpecInfo = GetInspectSpecialization, GetSpecializationInfoByID
+    GetInspectSpecialization = function() error("broken private-server inspect spec") end
+    GetSpecializationInfoByID = function() error("broken private-server spec catalog") end
+    ARC.OnInspectReady("A")
+    GetInspectSpecialization, GetSpecializationInfoByID = oldInspectSpec, oldSpecInfo
+    assert(not f.busy and not f.entry.specID and f.entry.gear.scanned)
+    assert(not f.entry.gear.auditComplete and contents(f):find("not evaluated", 1, true))
 end)
 test("target change during request rejects old result", function()
     local f = start(); step(); units.target = bob; ARC.OnInspectReady("A")
@@ -491,6 +525,8 @@ test("standalone and ElvUI widget branches both load", function()
         HandleScrollBar = function(_, b) b.skinned = true end,
     }
     ElvUI = { { media = { normFont = "ElvUIFont", blankTex = "blank", bordercolor = { 0, 0, 0 }, rgbvaluecolor = { 0, 1, 1 } }, GetModule = function() return S end } }
+    ARCEventFrame.scripts.OnEvent(ARCEventFrame, "ADDON_LOADED", "ElvUI")
+    assert(button.skinned and characterButton.skinned)
     f = start(); step(); ARC.OnInspectReady("A")
     assert(f.arcSkinned and f.appliedTemplate == "Transparent" and f.refresh.skinned)
     assert(f.lines[1].value.appliedFont == "ElvUIFont")
@@ -610,6 +646,44 @@ test("a clean report hides all item rows and zero counters", function()
     local visible = 0
     for _, row in ipairs(f.lines) do if row:IsShown() then visible = visible + 1 end end
     assert(visible == f.lineCount, "Rows reused from an older report must be hidden")
+end)
+test("class armor specialization rejects only recognized wrong armor", function()
+    local gear = policyScan({ [1] = { subType = "Plate" } }, 62, "MAGE")
+    assert(#gear.wrongArmor == 1 and gear.wrongArmor[1]:find("Head", 1, true))
+    assert(gear.slots[1].issues[#gear.slots[1].issues]:find("expected cloth", 1, true))
+    gear = policyScan({ [1] = { subType = "Cloth" } }, 62, "MAGE")
+    assert(#gear.wrongArmor == 0)
+    gear = policyScan({ [1] = { subType = "Server Custom Armor" } }, 62, "MAGE")
+    assert(#gear.wrongArmor == 0, "Unknown localized/custom armor must not become a false failure")
+end)
+test("one-handed main weapons require a confirmed equipped off-hand", function()
+    local gear = policyScan({ [16] = { equipLoc = "INVTYPE_WEAPON" } })
+    assert(#gear.missingItems == 1 and gear.missingItems[1] == "Off hand")
+    assert(gear.slots[#gear.slots].issues[1]:find("one%-handed main weapon"))
+    gear = policyScan({ [16] = { equipLoc = "INVTYPE_WEAPONMAINHAND" },
+        [17] = { equipped = true, equipLoc = "INVTYPE_HOLDABLE" } })
+    assert(#gear.missingItems == 0)
+    gear = policyScan({ [16] = { equipLoc = "INVTYPE_2HWEAPON" } })
+    assert(#gear.missingItems == 0)
+end)
+test("broken remote item APIs become pending instead of false gear failures", function()
+    local oldLink, oldInfo, oldStats, oldGem = GetInventoryItemLink, GetItemInfo, GetItemStats, GetItemGem
+    local oldTooltip = ARCGearScanTooltip.SetInventoryItem
+    GetInventoryItemLink = function() error("broken equipment API") end
+    local gear = policyScan()
+    GetInventoryItemLink = oldLink
+    assert(not gear.scanned and #gear.pendingSlots == 16 and gear.issueCount == 0)
+    assert(#gear.missingItems == 0 and #gear.unverified == 16)
+
+    GetItemInfo = function() error("broken item info") end
+    GetItemStats = function() error("broken item stats") end
+    GetItemGem = function() error("broken item gem") end
+    ARCGearScanTooltip.SetInventoryItem = function() error("broken item tooltip") end
+    gear = policyScan()
+    GetItemInfo, GetItemStats, GetItemGem = oldInfo, oldStats, oldGem
+    ARCGearScanTooltip.SetInventoryItem = oldTooltip
+    assert(not gear.scanned and #gear.pendingSlots > 0 and gear.issueCount == 0)
+    assert(#gear.unverified > 0 and #gear.missingItems == 0 and #gear.wrongArmor == 0)
 end)
 test("rare, Perfect, profession and legendary MoP gems are accepted", function()
     start()
@@ -736,7 +810,7 @@ test("hunter scopes, caster offhands and shields use their own rules", function(
     gear = policyScan({ [17] = { equipped = true, enchant = 4442, equipLoc = "INVTYPE_HOLDABLE" } })
     assert(#gear.badEnchants == 1 and gear.badEnchants[1]:find("different item type", 1, true))
 end)
-test("many findings stay scrollable and readiness stays separate", function()
+test("many findings stay scrollable without raid-readiness noise", function()
     local f = start()
     for _, slot in ipairs({ 1,2,3,5,6,7,8,9,10,11,12,13,14,15,16 }) do
         gearOverrides[slot] = { gems = { 76685, 76696 }, level = 440 }
@@ -744,8 +818,8 @@ test("many findings stay scrollable and readiness stays separate", function()
     f.entry.buffs.flask, f.entry.buffs.food = false, false
     step(); ARC.OnInspectReady("A")
     local text = contents(f)
-    assert(f.content.height > 620 and text:find("READINESS", 1, true))
-    assert(text:find("GEAR CHECK") < text:find("READINESS"))
+    assert(f.content.height > 620 and text:find("GEAR CHECK", 1, true))
+    assert(not text:find("READINESS", 1, true) and not text:find("Not active at check", 1, true))
 end)
 test("self specialization changes invalidate cached gem and enchant checks", function()
     start(); ARC.forceSelfGearScan = false; ARC.selfDirty = false
@@ -791,13 +865,32 @@ test("context menu installs once and supports party, raid, target and focus", fu
     units.party1 = nil
 end)
 
-test("submenus, self, pets, NPCs and missing units do not offer checks", function()
+test("self check uses local APIs without sending an inspect request", function()
+    local f = menuStart()
+    f:Hide()
+    local calls = notifyCount
+    local item = assert(popup("SELF", "player"))
+    assert(not item.disabled and item.tooltipText:find("Local PvE", 1, true))
+    item.func()
+    assert(f:IsShown() and f.entry.guid == "SELF" and f.entry.gear.scanned)
+    assert(f.entry.specID == 62 and f.entry.talents.source == "self")
+    assert(not f.busy and f.capturedAt and notifyCount == calls, "Self-check must not call NotifyInspect")
+    f:Hide()
+
+    units.target = nil
+    SlashCmdList.ARC("check")
+    assert(f:IsShown() and f.entry.guid == "SELF" and notifyCount == calls)
+    f:Hide()
+    SlashCmdList.ARC("check self")
+    assert(f:IsShown() and f.entry.guid == "SELF" and notifyCount == calls)
+    units.target = alice
+end)
+
+test("submenus, pets, NPCs and missing units do not offer checks", function()
     menuStart()
     UIDROPDOWNMENU_MENU_LEVEL = 2
     assert(not popup("PLAYER", "target") and #popupItems == 0)
     UIDROPDOWNMENU_MENU_LEVEL = 1
-    assert(not popup("SELF", "player"))
-    assert(not popup("PLAYER", "player"))
     assert(not popup("PET", "target"))
     alice.isPlayer = false
     assert(not popup("TARGET", "target"))
@@ -1528,7 +1621,7 @@ test("pet, bag and stance events mark self reports dirty without automatic game 
     end
 end)
 
-test("Healthstone column and report show confirmed missing items in red", function()
+test("Healthstone stays in the raid column but not standalone gear check", function()
     start(); ARC:Show()
     units.party1, units.player.class = alice, "WARLOCK"
     withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end,
@@ -1544,7 +1637,7 @@ test("Healthstone column and report show confirmed missing items in red", functi
         for _, candidate in ipairs(ARC.frame.rows) do if candidate.fullName == "Alice-Realm" then row = candidate end end
         assert(row.hs:GetText() == "!0" and row.hs.textColor[2] == 0.25)
         ARC:ShowPlayerCheck("target", "A")
-        assert(contents(ARC.playerCheckFrame):find("Healthstone missing", 1, true))
+        assert(not contents(ARC.playerCheckFrame):find("Healthstone missing", 1, true))
     end)
     units.party1, units.player.class = nil, nil
     ARC:Hide()
@@ -1793,6 +1886,21 @@ test("food accepts MoP Well Fed IDs without classifying unrelated auras", functi
     end)
 end)
 
+test("broken remote aura API remains unknown across status refreshes", function()
+    menuStart(); ARC:Hide()
+    local oldBuff = UnitBuff
+    UnitBuff = function() error("broken private-server aura API") end
+    assert(ARC.Internal.ScanUnitBuffs("player") == nil)
+    ARC:RefreshRoster()
+    local entry = assert(ARC.roster["Me-Realm"])
+    assert(not entry.auraDataAvailable and entry.buffs == nil)
+    assert(ARC:GetConsumableStatus(entry, "flask") == "unknown")
+    ARC:RefreshRosterStatus()
+    assert(not entry.auraDataAvailable, "A lightweight refresh must not turn a failed aura scan into missing buffs")
+    UnitBuff = oldBuff
+    ARC:RefreshRoster()
+end)
+
 test("one-second updates use status refresh with a five-second full-scan fallback", function()
     menuStart(); ARC:Show()
     local scans, original = 0, UnitBuff
@@ -1866,13 +1974,18 @@ test("raid verdict separates confirmed failures from unverified data", function(
     ARC:Hide()
 end)
 
-test("raid sessions track attendance, exact AFK flags, strict trash inactivity and boss pulls", function()
+test("raid sessions track attendance, tables, strict trash inactivity and boss pulls", function()
     menuStart(); ARC:Hide()
+    local shownPopup
     ARC.activeSession, ARC_DB.activeSession, ARC.sessionActivity = nil, nil, nil
+    ARC.trashCombatStartedAt, ARC.trashLastEvidence, ARC.trashEnemies = nil, nil, nil
     ARC_DB.sessions = {}
     units.party1 = alice
     alice.afk, alice.dead, alice.online, alice.visible = false, false, true, true
     withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end,
+        StaticPopupDialogs = {}, StaticPopup_Show = function(which, text1, text2, data)
+            shownPopup = { which=which, text1=text1, data=data }
+        end,
         GetInstanceInfo = function() return "Siege of Orgrimmar", "raid", 5 end }, function()
         assert(ARC:StartRaidSession())
         local session = ARC.activeSession
@@ -1883,17 +1996,53 @@ test("raid sessions track attendance, exact AFK flags, strict trash inactivity a
         now = now + 7
         alice.afk = false
         ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "PLAYER_FLAGS_CHANGED", "party1")
-        assert(member.afkSeconds == 7)
+        assert(member.afkSeconds == nil, "Blizzard AFK flags are not stored in session history")
 
-        ARC:StartTrashCombat()
-        for _ = 1, 12 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
-        assert(member.trashInactiveSeconds == 12, "Crossing 10s must retroactively include the first ten seconds")
+        ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_REGEN_DISABLED")
+        assert(not ARC.trashCombatStartedAt, "A local combat flag alone must not create a trash pack")
+        ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "A", "Alice", 0, 0, "NPC1", "Trash Mob")
+        assert(ARC.trashCombatStartedAt, "Real group combat must create a trash pack")
+        local function KeepTrashActive(seconds, enemyGUID)
+            for _ = 1, seconds do
+                now = now + 1
+                ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "SELF", "Me", 0, 0, enemyGUID, "Trash Mob")
+                ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
+            end
+        end
+        KeepTrashActive(12, "NPC1")
+        assert(member.trashInactiveSeconds == 12, "Crossing 5s must retroactively include the full inactive interval")
         ARC:SessionCombatLog(now, "SPELL_CAST_SUCCESS", false, "A", "Alice", 0, 0, nil, nil)
-        for _ = 1, 5 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
+        KeepTrashActive(4, "NPC1")
         assert(member.trashInactiveSeconds == 12, "Activity resets the inactivity timer")
-        for _ = 1, 6 do now = now + 1; ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1) end
+        KeepTrashActive(2, "NPC1")
+        assert(member.trashInactiveSeconds == 18, "Crossing 5s must also include the first five seconds after activity")
+        KeepTrashActive(5, "NPC1")
         assert(member.trashInactiveSeconds == 23)
-        ARC:EndTrashCombat()
+        ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_REGEN_ENABLED")
+        assert(ARC.trashCombatStartedAt, "A local combat flag ending must not close an active raid pack")
+        ARC:SessionCombatLog(now, "UNIT_DIED", false, nil, nil, 0, 0, "NPC1", "Trash Mob")
+        now = now + 1
+        ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
+        assert(not ARC.trashCombatStartedAt, "The last tracked enemy death must close the pack")
+
+        units.partypet1 = { guid = "PET-A", name = "Wolf", online = true, visible = true, isPlayer = false }
+        ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "A", "Alice", 0, 0, "NPC2", "Trash Mob")
+        local lastPlayerActivity = ARC.sessionActivity["Alice-Realm"]
+        for _ = 1, 6 do
+            now = now + 1
+            ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "PET-A", "Wolf", 0, 0, "NPC2", "Trash Mob")
+            ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
+        end
+        assert(member.trashInactiveSeconds == 29, "Pet-only fighting must not hide owner inactivity")
+        assert(ARC.sessionActivity["Alice-Realm"] == lastPlayerActivity, "Pet events must not count as owner activity")
+        ARC:SessionCombatLog(now, "UNIT_DIED", false, nil, nil, 0, 0, "NPC2", "Trash Mob")
+        now = now + 1
+        ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
+
+        ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "A", "Alice", 0, 0, "NPC3", "Evaded Mob")
+        now = now + 7
+        ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
+        assert(not ARC.trashCombatStartedAt, "Six seconds without combat evidence must clear stuck combat")
 
         ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
         now = now + 25
@@ -1904,14 +2053,37 @@ test("raid sessions track attendance, exact AFK flags, strict trash inactivity a
         ARC:RefreshRoster()
         ARC.roster["Alice-Realm"].ready = "notready"
         ARC:SessionReadyCheckFinished()
-        assert(#session.readyChecks == 1 and session.readyChecks[1].notReady == 1)
+        assert(session.readyCheckCount == 1 and session.readyChecks == nil)
         assert(ARC:EndRaidSession() and #ARC_DB.sessions == 1)
         local report = ARC:GetSessionReportText()
-        assert(report:find("Siege of Orgrimmar", 1, true) and report:find("Sha of Pride - KILL", 1, true))
-        assert(report:find("AFK flag 7s", 1, true) and report:find("trash inactive ~23s", 1, true))
-        assert(report:find("time after 10s", 1, true))
+        assert(report:find("Siege of Orgrimmar", 1, true) and report:find("Sha of Pride | KILL", 1, true))
+        assert(not report:find("AFK flag", 1, true) and report:find("trash idle 29s / 100%", 1, true))
+        assert(report:find("estimated after 5s", 1, true))
         ARC:ShowSessionReport()
         assert(ARC.sessionFrame:IsShown() and ARC.sessionFrame.text:GetText():find("ARC RAID SESSION REPORT", 1, true))
+        assert(ARC.sessionFrame.summary:GetText():find("Session 1 / 1", 1, true))
+        assert(ARC.sessionFrame.delete:IsShown(), "A completed report must be deletable")
+        assert(ARC.sessionFrame.playersScroll:IsShown() and ARC.sessionFrame.playerRows[1])
+        local aliceRow
+        for _, row in ipairs(ARC.sessionFrame.playerRows) do
+            if row.member == member then aliceRow = row; break end
+        end
+        assert(aliceRow and aliceRow.cells[4]:GetText():find("100%%") and aliceRow.cells[4].textColor[1] == 1)
+        aliceRow.deathHover.scripts.OnEnter(aliceRow.deathHover)
+        local deathTooltip = table.concat(GameTooltip.tooltipLines or {}, " ")
+        assert(deathTooltip:find("Boss: 1", 1, true) and deathTooltip:find("First deaths: 1", 1, true))
+        ARC.sessionFrame.tabs.bosses.scripts.OnClick()
+        assert(ARC.sessionFrame.bossesScroll:IsShown() and not ARC.sessionFrame.playersScroll:IsShown())
+        assert(ARC.sessionFrame.bossRows[1].cells[1]:GetText():find("Sha of Pride", 1, true))
+        ARC.sessionFrame.bossRows[1].scripts.OnClick(ARC.sessionFrame.bossRows[1])
+        assert(ARC.sessionFrame.bossRows[2]:IsShown() and ARC.sessionFrame.bossRows[2].cells[1]:GetText():find("#1", 1, true))
+        ARC.sessionFrame.tabs.export.scripts.OnClick()
+        assert(ARC.sessionFrame.scroll:IsShown() and ARC.sessionFrame.select:IsShown())
+        ARC.sessionFrame.delete.scripts.OnClick()
+        assert(shownPopup and shownPopup.which == "ARC_DELETE_SESSION_REPORT" and shownPopup.data == session)
+        StaticPopupDialogs.ARC_DELETE_SESSION_REPORT.OnAccept(nil, shownPopup.data)
+        assert(#ARC_DB.sessions == 0 and ARC.sessionFrame.text:GetText() == "No raid session recorded yet.")
+        assert(not ARC.sessionFrame.delete:IsShown(), "Delete must be hidden without a completed report")
         ARC.sessionFrame:Hide()
         ARC.sessionFrame.text.GetStringHeight = false
         ARC_DB.sessions = {}
@@ -1920,7 +2092,60 @@ test("raid sessions track attendance, exact AFK flags, strict trash inactivity a
         assert(ARC.sessionFrame.text.height == 450)
         ARC.sessionFrame:Hide()
     end)
-    units.party1, alice.afk = nil, nil
+    units.party1, units.partypet1, alice.afk = nil, nil, nil
     ARC_DB.sessions = {}
+end)
+
+test("automatic raid sessions survive wipes, stop after leaving and retain only fourteen days", function()
+    local inside = false
+    withGlobals({
+        IsInInstance = function() return inside, inside and "raid" or "none" end,
+        IsInRaid = function() return inside end,
+        IsInGroup = function() return inside end,
+        GetNumGroupMembers = function() return 1 end,
+        GetInstanceInfo = function() return inside and "Throne of Thunder" or "Stormwind", inside and "raid" or "none", inside and 5 or 0, nil, nil, nil, nil, inside and 1098 or 0 end,
+    }, function()
+        ARC.activeSession, ARC_DB.activeSession, ARC.autoOutsideSince = nil, nil, nil
+        ARC_DB.sessions, ARC_DB.autoSessions, ARC_DB.autoSessionSuppressedKey = {}, true, nil
+        inside = true
+        ARC:UpdateAutoSession()
+        local automatic = assert(ARC.activeSession)
+        assert(automatic.automatic and automatic.instanceKey == "1098")
+        ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_REGEN_DISABLED")
+        ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_REGEN_ENABLED")
+        assert(ARC.activeSession == automatic, "Wipes and combat changes must not split an automatic session")
+        inside = false
+        ARC:UpdateAutoSession()
+        now = now + 29; ARC:UpdateAutoSession()
+        assert(ARC.activeSession == automatic)
+        now = now + 1; ARC:UpdateAutoSession()
+        assert(not ARC.activeSession and #ARC_DB.sessions == 1, "Leaving for thirty seconds must save the session")
+
+        inside = true
+        ARC:UpdateAutoSession()
+        assert(ARC.activeSession and ARC.activeSession.automatic)
+        ARC:EndRaidSession()
+        ARC:UpdateAutoSession()
+        assert(not ARC.activeSession, "Manual stop inside a raid must suppress restart until re-entry")
+        inside = false; ARC:UpdateAutoSession()
+
+        inside = true; ARC:UpdateAutoSession()
+        assert(ARC.activeSession and ARC.activeSession.automatic)
+        ARCOptionsAutoSessions:SetChecked(false)
+        ARCOptionsAutoSessions.scripts.OnClick(ARCOptionsAutoSessions)
+        assert(not ARC.activeSession and not ARC_DB.autoSessions, "Disabling automatic sessions must save the active automatic session")
+        inside = false
+        ARCOptionsAutoSessions:SetChecked(true)
+        ARCOptionsAutoSessions.scripts.OnClick(ARCOptionsAutoSessions)
+
+        local currentWall = time()
+        ARC_DB.sessions = { { endedAt=currentWall - 15*24*60*60 } }
+        for index = 1, 7 do ARC_DB.sessions[#ARC_DB.sessions + 1] = { endedAt=currentWall - index } end
+        ARC:InitSessionTracker()
+        assert(#ARC_DB.sessions == 7, "Every session within fourteen days must be retained")
+        for _, saved in ipairs(ARC_DB.sessions) do assert(saved.endedAt > currentWall - 14*24*60*60) end
+    end)
+    ARC.activeSession, ARC_DB.activeSession, ARC.autoOutsideSince = nil, nil, nil
+    ARC_DB.sessions, ARC_DB.autoSessionSuppressedKey = {}, nil
 end)
 print("Passed " .. passed .. " ARC regression tests")

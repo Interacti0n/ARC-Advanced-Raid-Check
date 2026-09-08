@@ -50,6 +50,16 @@ local function ElvSkin(frame)
     end
 end
 
+local function ElvSkinButton(button)
+    if not button or button.arcElvSkinned or not ElvUI or not ElvUI[1] then return end
+    local E = ElvUI[1]
+    if not E.GetModule then return end
+    local ok, S = pcall(E.GetModule, E, "Skins")
+    if ok and S and S.HandleButton and pcall(S.HandleButton, S, button) then
+        button.arcElvSkinned = true
+    end
+end
+
 local function HideItemTooltip(icon)
     if icon and GameTooltip:IsOwned(icon) then GameTooltip:Hide() end
 end
@@ -223,28 +233,6 @@ local function RenderDetail(frame)
         end
     end
 
-    -- Consumables in a city are only a snapshot, separate from the gear verdict.
-    local buffs, readiness = entry.buffs, {}
-    if buffs and not buffs.flask then readiness[#readiness + 1] = { "Flask", "Not active at check" } end
-    if buffs and not buffs.food then readiness[#readiness + 1] = { "Food", "Not active at check" } end
-    if buffs and buffs.flask and buffs.flaskExpiresAt and buffs.flaskExpiresAt - GetTime() <= ARC.CONSUMABLE_WARN_SECONDS then
-        readiness[#readiness + 1] = { "Flask", math.max(0, math.ceil((buffs.flaskExpiresAt - GetTime()) / 60)) .. "m remaining" }
-    end
-    if buffs and buffs.food and buffs.foodExpiresAt and buffs.foodExpiresAt - GetTime() <= ARC.CONSUMABLE_WARN_SECONDS then
-        readiness[#readiness + 1] = { "Food", math.max(0, math.ceil((buffs.foodExpiresAt - GetTime()) / 60)) .. "m remaining" }
-    end
-    local durability = entry.durWorst or entry.durPct
-    if durability and durability < 100 then
-        readiness[#readiness + 1] = { "Repair", durability .. "% lowest durability (last ARC group report)" }
-    end
-    if ARC.GetHealthstoneStatus then
-        local stone, stoneTone, detail = ARC:GetHealthstoneStatus(entry)
-        if stoneTone == "bad" or stoneTone == "warn" then readiness[#readiness + 1] = { "Healthstone", detail, stoneTone } end
-    end
-    if #readiness > 0 then
-        AddSection(frame, "READINESS", "Snapshot only; separate from gear issues", "warn")
-        for _, row in ipairs(readiness) do AddLine(frame, row[1], row[2], row[3] or "warn") end
-    end
     for index = frame.lineCount + 1, #frame.lines do
         SetItemIcon(frame.lines[index], nil)
         frame.lines[index]:Hide()
@@ -320,23 +308,23 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
         print("|cff33ff99ARC:|r The inspected player changed. Reopen their inspect window.")
         return
     end
-    if UnitIsUnit(unit, "player") then
-        print("|cff33ff99ARC:|r Use /arc for your own gear check.")
-        return
-    end
+    local isSelf = UnitIsUnit(unit, "player")
     local fullName, name = I.GetUnitIdentity(unit)
     local className, class = UnitClass(unit)
     local entry = { guid = guid, unit = unit, name = name, fullName = fullName, className = className, class = class,
         level = UnitLevel(unit), online = not UnitIsConnected or UnitIsConnected(unit),
         dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit), guild = GetGuildInfo and GetGuildInfo(unit) }
     if entry.online and (not UnitIsVisible or UnitIsVisible(unit)) then entry.buffs = I.ScanUnitBuffs(unit) end
+    if isSelf and self.RefreshRoster then self:RefreshRoster() end
     local peer = self.roster[fullName]
-    if peer and peer.lastComm and GetTime() - peer.lastComm < 120 and peer.unit and UnitGUID(peer.unit) == guid then
+    if peer and ((isSelf and peer.unit and UnitGUID(peer.unit) == guid) or
+        (peer.lastComm and GetTime() - peer.lastComm < 120 and peer.unit and UnitGUID(peer.unit) == guid)) then
         entry.hasARC, entry.arcVersion, entry.durPct, entry.durWorst = true, peer.arcVersion, peer.durPct, peer.durWorst
+        entry.specID, entry.specName, entry.specIcon = peer.specID, peer.specName, peer.specIcon
+        entry.role = peer.role
         entry.weaponBuffs, entry.weaponBuffAt = peer.weaponBuffs, peer.weaponBuffAt
         entry.preparation, entry.sacrifice = peer.preparation, peer.sacrifice
     end
-    if self.ScanSelfBuffs then entry.selfBuffs = self:ScanSelfBuffs(unit, entry) end
     local f = self.playerCheckFrame
     if not f then f = BuildDetailFrame(); self.playerCheckFrame = f end
     ElvSkin(f)
@@ -347,6 +335,23 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
     f.refresh:Disable()
     f:Show()
     f.scroll:SetVerticalScroll(0)
+    if isSelf then
+        -- Blizzard inspect is for other players only. Local APIs expose a more
+        -- complete local data without touching the shared inspect cache.
+        if self.ScanTalents then self:ScanTalents("player", entry, false) end
+        if self.ReadSelfWeaponBuffs then entry.weaponBuffs, entry.weaponBuffAt = self:ReadSelfWeaponBuffs(), GetTime() end
+        if self.ReadSelfPreparation then entry.preparation = self:ReadSelfPreparation(entry) end
+        self:AnalyzeUnitGear("player", entry)
+        if self.ScanSelfBuffs then entry.selfBuffs = self:ScanSelfBuffs("player", entry) end
+        f.busy, f.capturedAt = false, GetTime()
+        f.refresh:Enable()
+        f.message = entry.gear and entry.gear.validationPending and
+            "Local snapshot captured; some item data is still loading. Use Refresh to update." or
+            "Local snapshot captured. Use Refresh after equipment changes."
+        RenderDetail(f)
+        return
+    end
+    if self.ScanSelfBuffs then entry.selfBuffs = self:ScanSelfBuffs(unit, entry) end
     local ok, reason = self:RequestPlayerInspect(unit, entry, function(request, status, message)
         if f.session ~= session then return end
         f.busy = false
@@ -381,13 +386,13 @@ function ARC:UpdatePlayerCheck()
     RenderDetail(f)
 end
 
-local function IsOtherPlayer(unit)
-    return type(unit) == "string" and UnitExists(unit) and UnitIsPlayer and
-        UnitIsPlayer(unit) and not UnitIsUnit(unit, "player")
+local function IsPlayerUnit(unit)
+    return type(unit) == "string" and UnitExists(unit) and UnitIsPlayer and UnitIsPlayer(unit)
 end
 
 local function CanCheckMenuUnit(unit)
-    if not IsOtherPlayer(unit) then return false end
+    if not IsPlayerUnit(unit) then return false end
+    if UnitIsUnit(unit, "player") then return true end
     if UnitIsConnected and not UnitIsConnected(unit) then return false end
     if UnitIsVisible and not UnitIsVisible(unit) then return false end
     if CanInspect then
@@ -404,7 +409,7 @@ end
 -- Both the ARC row menu and Blizzard/ElvUI unit menus use this entry. Capture
 -- values, not the mutable dropdown/roster table or whichever target is current.
 function ARC:CreatePlayerCheckMenuItem(unit, expectedFullName)
-    if not IsOtherPlayer(unit) then return nil end
+    if not IsPlayerUnit(unit) then return nil end
     local fullName = I.GetUnitIdentity(unit)
     if expectedFullName and MenuIdentity(fullName) ~= MenuIdentity(expectedFullName) then return nil end
     local guid = UnitGUID(unit)
@@ -414,7 +419,9 @@ function ARC:CreatePlayerCheckMenuItem(unit, expectedFullName)
         text = "ARC Check", notCheckable = true,
         disabled = not CanCheckMenuUnit(unit), tooltipOnButton = true,
         tooltipTitle = "ARC Check",
-        tooltipText = "PvE gear check. Requires this player to be online and in inspect range.",
+        tooltipText = UnitIsUnit(unit, "player") and
+            "Local PvE gear and readiness check for your character." or
+            "PvE gear check. Requires this player to be online and in inspect range.",
         func = function()
             if CloseDropDownMenus then CloseDropDownMenus() end
             local current = ResolveUnit(selected)
@@ -428,13 +435,13 @@ function ARC:CreatePlayerCheckMenuItem(unit, expectedFullName)
 end
 
 local PLAYER_POPUPS = {
-    PLAYER = true, PARTY = true, RAID_PLAYER = true, RAID = true,
+    SELF = true, PLAYER = true, PARTY = true, RAID_PLAYER = true, RAID = true,
     TARGET = true, FOCUS = true, FRIEND = true, FRIEND_OFFLINE = true, CHAT_ROSTER = true,
 }
 
 local function ResolvePopupUnit(dropdown, unit, name)
     -- An explicit unit must never silently fall back to another named target.
-    if unit ~= nil then return IsOtherPlayer(unit) and unit or nil end
+    if unit ~= nil then return IsPlayerUnit(unit) and unit or nil end
     name = name or (dropdown and dropdown.name)
     if type(name) ~= "string" or name == "" then return nil end
     if not name:find("-", 1, true) then
@@ -448,7 +455,7 @@ local function ResolvePopupUnit(dropdown, unit, name)
     for _, token in ipairs(I.GetGroupUnits()) do candidates[#candidates + 1] = token end
     local match, guid
     for _, token in ipairs(candidates) do
-        if IsOtherPlayer(token) and MenuIdentity(I.GetUnitIdentity(token)) == wanted then
+        if IsPlayerUnit(token) and MenuIdentity(I.GetUnitIdentity(token)) == wanted then
             local currentGUID = UnitGUID(token)
             if guid and currentGUID ~= guid then return nil end
             match, guid = token, currentGUID
@@ -505,10 +512,39 @@ function ARC:AttachInspectCheckButton()
         if not frame.arcCheckGUID then return end
         ARC:ShowPlayerCheck(frame.unit, frame.arcCheckGUID)
     end)
-    local E = ElvUI and ElvUI[1]
-    if E and E.GetModule then
-        local ok, S = pcall(E.GetModule, E, "Skins")
-        if ok and S and S.HandleButton then pcall(S.HandleButton, S, button) end
-    end
+    ElvSkinButton(button)
     LayoutHeader()
+end
+
+function ARC:AttachCharacterCheckButton()
+    if not CharacterFrame or CharacterFrame.arcCheckButton then return end
+    local frame = CharacterFrame
+    local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    button:SetSize(74, 18)
+    button:SetText("ARC Check")
+    frame.arcCheckButton = button
+    local function LayoutHeader()
+        -- Place the action immediately after the portrait and reserve the
+        -- remaining title-bar width for the normal Character Info title.
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 68, -5)
+        local title = frame.TitleText or CharacterFrameTitleText
+        if title then
+            title:ClearAllPoints()
+            title:SetPoint("LEFT", button, "RIGHT", 6, 0)
+            title:SetPoint("RIGHT", frame, "TOPRIGHT", -34, -14)
+            title:SetJustifyH("CENTER")
+            if title.SetWordWrap then title:SetWordWrap(false) end
+        end
+    end
+    frame:HookScript("OnShow", LayoutHeader)
+    button:SetScript("OnClick", function() ARC:ShowPlayerCheck("player", UnitGUID("player")) end)
+    ElvSkinButton(button)
+    LayoutHeader()
+end
+
+function ARC:TrySkinPlayerCheckUI()
+    ElvSkin(self.playerCheckFrame)
+    ElvSkinButton(InspectFrame and InspectFrame.arcCheckButton)
+    ElvSkinButton(CharacterFrame and CharacterFrame.arcCheckButton)
 end

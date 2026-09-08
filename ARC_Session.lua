@@ -1,8 +1,11 @@
 local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Session.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 
-local INACTIVE_AFTER = 10
-local MAX_SESSIONS = 10
+local INACTIVE_AFTER = 5
+local TRASH_IDLE_END_AFTER = 6
+local TRASH_DEAD_END_AFTER = 1
+local SESSION_RETENTION = 14 * 24 * 60 * 60
+local AUTO_EXIT_GRACE = 30
 local MAX_READY_CHECKS = 100
 local MAX_PULLS = 200
 
@@ -35,9 +38,62 @@ local function PlayerKey(name)
 end
 
 local function CurrentLocation()
-    if not GetInstanceInfo then return "Unknown", 0 end
-    local name, _, difficulty = GetInstanceInfo()
-    return name or "Unknown", tonumber(difficulty) or 0
+    if not GetInstanceInfo then return "Unknown", 0, nil, nil end
+    local name, instanceType, difficulty, _, _, _, _, instanceID = GetInstanceInfo()
+    return name or "Unknown", tonumber(difficulty) or 0, instanceType, instanceID
+end
+
+local function RaidInstanceState()
+    local inInstance, instanceType
+    if IsInInstance then inInstance, instanceType = IsInInstance() end
+    local name, difficulty, infoType, instanceID = CurrentLocation()
+    instanceType = instanceType or infoType
+    if inInstance == nil then inInstance = instanceType == "raid" end
+    local isRaid = inInstance and instanceType == "raid"
+    local key = instanceID and tostring(instanceID) or (name .. ":" .. tostring(difficulty))
+    return isRaid and true or false, key, name, difficulty, instanceID
+end
+
+local function UpgradeSession(session)
+    if type(session) ~= "table" or (tonumber(session.version) or 1) >= 2 then return end
+    session.readyCheckCount = session.readyCheckCount or #(session.readyChecks or {})
+    session.readyChecks = nil
+    local firstDeaths = {}
+    local bossDeaths = {}
+    for _, pull in ipairs(session.pulls or {}) do
+        for _, death in ipairs(pull.deaths or {}) do
+            if death.name then bossDeaths[death.name] = (bossDeaths[death.name] or 0) + 1 end
+        end
+        if pull.firstDeath and pull.firstDeath.name then
+            firstDeaths[pull.firstDeath.name] = (firstDeaths[pull.firstDeath.name] or 0) + 1
+        end
+    end
+    for key, member in pairs(session.members or {}) do
+        local shortName = member.name or key
+        member.offlineSeconds = member.offlineSeconds or 0
+        member.bossDeaths = member.bossDeaths or bossDeaths[shortName] or 0
+        member.trashDeaths = member.trashDeaths or 0
+        member.otherDeaths = member.otherDeaths or math.max(0, (member.deaths or 0) - member.bossDeaths)
+        member.firstDeaths = member.firstDeaths or firstDeaths[shortName] or 0
+        member.afkSeconds, member.afkSince = nil, nil
+    end
+    session.version = 2
+end
+
+local function PruneSessions()
+    ARC_DB.sessions = type(ARC_DB.sessions) == "table" and ARC_DB.sessions or {}
+    local cutoff = WallTime() - SESSION_RETENTION
+    for index = #ARC_DB.sessions, 1, -1 do
+        local session = ARC_DB.sessions[index]
+        if type(session) ~= "table" or (session.endedAt and session.endedAt < cutoff) then
+            table.remove(ARC_DB.sessions, index)
+        else
+            UpgradeSession(session)
+        end
+    end
+    table.sort(ARC_DB.sessions, function(a, b)
+        return (a.endedAt or a.startedAt or 0) < (b.endedAt or b.startedAt or 0)
+    end)
 end
 
 local function EnsureMember(session, fullName, unit)
@@ -46,9 +102,11 @@ local function EnsureMember(session, fullName, unit)
         local _, shortName = I.GetUnitIdentity(unit)
         member = {
             name = shortName or fullName, fullName = fullName,
-            class = unit and select(2, UnitClass(unit)) or nil,
-            joinedAt = WallTime(), totalPresent = 0, afkSeconds = 0,
-            trashInactiveSeconds = 0, trashActivityEvents = 0, pulls = 0,
+            class = unit and select(2, UnitClass(unit)) or nil, joinedAt = WallTime(),
+            totalPresent = 0, offlineSeconds = 0, trashEligibleSeconds = 0,
+            trashInactiveSeconds = 0, trashLongestInactiveSeconds = 0,
+            pulls = 0, deaths = 0, bossDeaths = 0, trashDeaths = 0,
+            otherDeaths = 0, firstDeaths = 0,
         }
         session.members[fullName] = member
     end
@@ -56,10 +114,18 @@ local function EnsureMember(session, fullName, unit)
 end
 
 function ARC:InitSessionTracker()
-    ARC_DB.sessions = type(ARC_DB.sessions) == "table" and ARC_DB.sessions or {}
-    while #ARC_DB.sessions > MAX_SESSIONS do table.remove(ARC_DB.sessions, 1) end
+    PruneSessions()
     if type(ARC_DB.activeSession) == "table" and not ARC_DB.activeSession.endedAt then
+        UpgradeSession(ARC_DB.activeSession)
         self.activeSession = ARC_DB.activeSession
+        if ARC_DB.autoSessions then
+            local inRaid, key, _, _, instanceID = RaidInstanceState()
+            if inRaid then
+                self.activeSession.automatic = true
+                self.activeSession.instanceKey = self.activeSession.instanceKey or key
+                self.activeSession.instanceID = self.activeSession.instanceID or instanceID
+            end
+        end
         self.sessionActivity = {}
         self:UpdateSessionRoster()
         print("|cff33ff99ARC:|r resumed the active raid session after reload.")
@@ -73,6 +139,7 @@ end
 function ARC:UpdateSessionRoster()
     local session = self.activeSession
     if not session then return end
+    if session.automatic and self.autoOutsideSince then return end
     local now, present = WallTime(), {}
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) then
@@ -82,14 +149,14 @@ function ARC:UpdateSessionRoster()
                 local member = EnsureMember(session, fullName, unit)
                 member.lastSeen = now
                 if not member.presentSince then member.presentSince = now end
+                local online = (not UnitIsConnected) or UnitIsConnected(unit)
+                if not online and not member.offlineSince then member.offlineSince = now end
+                if online and member.offlineSince then
+                    member.offlineSeconds = (member.offlineSeconds or 0) + math.max(0, now - member.offlineSince)
+                    member.offlineSince = nil
+                end
                 if self.trashCombatStartedAt and self.sessionActivity and not self.sessionActivity[fullName] then
                     self.sessionActivity[fullName] = GetTime()
-                end
-                local afk = UnitIsAFK and UnitIsAFK(unit) or false
-                if afk and not member.afkSince then member.afkSince = now end
-                if not afk and member.afkSince then
-                    member.afkSeconds = member.afkSeconds + math.max(0, now - member.afkSince)
-                    member.afkSince = nil
                 end
             end
         end
@@ -99,14 +166,14 @@ function ARC:UpdateSessionRoster()
             member.totalPresent = member.totalPresent + math.max(0, now - member.presentSince)
             member.presentSince = nil
         end
-        if member.afkSince and not present[fullName] then
-            member.afkSeconds = member.afkSeconds + math.max(0, now - member.afkSince)
-            member.afkSince = nil
+        if member.offlineSince and not present[fullName] then
+            member.offlineSeconds = (member.offlineSeconds or 0) + math.max(0, now - member.offlineSince)
+            member.offlineSince = nil
         end
     end
 end
 
-function ARC:StartRaidSession()
+function ARC:StartRaidSession(automatic)
     if self.activeSession then
         print("|cff33ff99ARC:|r a raid session is already active.")
         return false
@@ -115,11 +182,13 @@ function ARC:StartRaidSession()
         print("|cff33ff99ARC:|r join a group or raid before starting a session.")
         return false
     end
-    local instance, difficulty = CurrentLocation()
+    local instance, difficulty, _, instanceID = CurrentLocation()
     local now = WallTime()
     local session = {
-        version = 1, startedAt = now, instance = instance, difficulty = difficulty,
-        members = {}, pulls = {}, readyChecks = {}, deaths = {},
+        version = 2, startedAt = now, instance = instance, difficulty = difficulty,
+        instanceID = instanceID, automatic = automatic and true or false,
+        instanceKey = instanceID and tostring(instanceID) or (instance .. ":" .. tostring(difficulty)),
+        members = {}, pulls = {}, readyCheckCount = 0,
         trashCombats = 0, trashCombatSeconds = 0,
     }
     self.activeSession, self.sessionActivity = session, {}
@@ -136,14 +205,14 @@ local function CloseOpenMemberTimes(session, now)
             member.totalPresent = member.totalPresent + math.max(0, now - member.presentSince)
             member.presentSince = nil
         end
-        if member.afkSince then
-            member.afkSeconds = member.afkSeconds + math.max(0, now - member.afkSince)
-            member.afkSince = nil
+        if member.offlineSince then
+            member.offlineSeconds = (member.offlineSeconds or 0) + math.max(0, now - member.offlineSince)
+            member.offlineSince = nil
         end
     end
 end
 
-function ARC:EndRaidSession()
+function ARC:EndRaidSession(reason, endedAt)
     local session = self.activeSession
     if not session then
         print("|cff33ff99ARC:|r no raid session is active.")
@@ -157,16 +226,56 @@ function ARC:EndRaidSession()
         self.currentEncounter.interrupted = true
         self.currentEncounter = nil
     end
-    local now = WallTime()
+    local now = tonumber(endedAt) or WallTime()
     CloseOpenMemberTimes(session, now)
     session.endedAt = now
     ARC_DB.sessions[#ARC_DB.sessions + 1] = session
-    while #ARC_DB.sessions > MAX_SESSIONS do table.remove(ARC_DB.sessions, 1) end
+    PruneSessions()
     ARC_DB.activeSession = nil
     self.activeSession, self.sessionActivity, self.currentEncounter = nil, nil, nil
+    if reason == nil or reason == "manual" then
+        local inRaid, key = RaidInstanceState()
+        if inRaid then ARC_DB.autoSessionSuppressedKey = key end
+    end
     print("|cff33ff99ARC:|r raid session ended and saved.")
     self:RefreshSessionReport(session)
     return true
+end
+
+function ARC:UpdateAutoSession()
+    if not ARC_DB then return end
+    local inRaid, key = RaidInstanceState()
+    if not inRaid then ARC_DB.autoSessionSuppressedKey = nil end
+    if not ARC_DB.autoSessions then return end
+    local now = WallTime()
+    if inRaid then
+        self.autoOutsideSince = nil
+        if ARC_DB.autoSessionSuppressedKey and ARC_DB.autoSessionSuppressedKey ~= key then
+            ARC_DB.autoSessionSuppressedKey = nil
+        end
+        local session = self.activeSession
+        if session then
+            session.lastInsideAt = now
+            if session.automatic and session.instanceKey and session.instanceKey ~= key then
+                self:EndRaidSession("automatic", now)
+                session = nil
+            end
+        end
+        if not session and ARC_DB.autoSessionSuppressedKey ~= key and (IsInRaid() or IsInGroup()) then
+            if self:StartRaidSession(true) then self.activeSession.lastInsideAt = now end
+        end
+    else
+        local session = self.activeSession
+        if session and session.automatic then
+            if not self.autoOutsideSince then self.autoOutsideSince = GetTime() end
+            if GetTime() - self.autoOutsideSince >= AUTO_EXIT_GRACE then
+                self:EndRaidSession("automatic", session.lastInsideAt or now)
+                self.autoOutsideSince = nil
+            end
+        else
+            self.autoOutsideSince = nil
+        end
+    end
 end
 
 function ARC:GetReportSession(offset)
@@ -176,6 +285,65 @@ function ARC:GetReportSession(offset)
         return ARC_DB.sessions and ARC_DB.sessions[#ARC_DB.sessions - offset + 1]
     end
     return ARC_DB.sessions and ARC_DB.sessions[#ARC_DB.sessions - offset]
+end
+
+local function ReportPosition(session)
+    local saved = ARC_DB.sessions or {}
+    local total = #saved + (ARC.activeSession and 1 or 0)
+    if not session then return 0, total end
+    if session == ARC.activeSession then return 1, total end
+    local position = ARC.activeSession and 2 or 1
+    for index = #saved, 1, -1 do
+        if saved[index] == session then return position, total end
+        position = position + 1
+    end
+    return 0, total
+end
+
+function ARC:DeleteRaidSession(session)
+    if type(session) ~= "table" or session == self.activeSession then return false end
+    local sessions = ARC_DB.sessions or {}
+    for index = #sessions, 1, -1 do
+        if sessions[index] == session then
+            table.remove(sessions, index)
+            PruneSessions()
+            local frame = self.sessionFrame
+            if frame then
+                while (frame.historyOffset or 0) > 0 and not self:GetReportSession(frame.historyOffset) do
+                    frame.historyOffset = frame.historyOffset - 1
+                end
+                self:RefreshSessionReport()
+            end
+            print("|cff33ff99ARC:|r saved raid session deleted.")
+            return true
+        end
+    end
+    return false
+end
+
+function ARC:RequestDeleteRaidSession(session)
+    if type(session) ~= "table" or session == self.activeSession then return false end
+    if not StaticPopupDialogs or not StaticPopup_Show then return false end
+    if not StaticPopupDialogs.ARC_DELETE_SESSION_REPORT then
+        StaticPopupDialogs.ARC_DELETE_SESSION_REPORT = {
+            text = "Delete this saved ARC session report?\n\n%s",
+            button1 = DELETE or "Delete",
+            button2 = CANCEL or "Cancel",
+            OnAccept = function(_, data)
+                ARC:DeleteRaidSession(data or ARC.pendingDeleteSession)
+                ARC.pendingDeleteSession = nil
+            end,
+            OnCancel = function() ARC.pendingDeleteSession = nil end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+            preferredIndex = 3,
+        }
+    end
+    self.pendingDeleteSession = session
+    local label = string.format("%s - %s", session.instance or "Unknown", DisplayTime(session.startedAt))
+    StaticPopup_Show("ARC_DELETE_SESSION_REPORT", label, nil, session)
+    return true
 end
 
 function ARC:SessionEncounterStart(encounterID, encounterName, difficultyID, groupSize)
@@ -189,8 +357,12 @@ function ARC:SessionEncounterStart(encounterID, encounterName, difficultyID, gro
     }
     session.pulls[#session.pulls + 1] = pull
     self.currentEncounter = pull
-    for _, member in pairs(session.members) do
-        if member.presentSince then member.pulls = member.pulls + 1 end
+    for _, unit in ipairs(I.GetGroupUnits()) do
+        if UnitExists(unit) and ((not UnitIsConnected) or UnitIsConnected(unit)) then
+            local fullName = I.GetUnitIdentity(unit)
+            local member = fullName and session.members[fullName]
+            if member and member.presentSince then member.pulls = (member.pulls or 0) + 1 end
+        end
     end
 end
 
@@ -204,33 +376,59 @@ function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, group
     self:RefreshSessionReport()
 end
 
-function ARC:StartTrashCombat()
+function ARC:StartTrashCombat(enemyGUID)
     if not self.activeSession or self.currentEncounter or self.trashCombatStartedAt then return end
-    self.trashCombatStartedAt = GetTime()
-    self.trashLastTick = GetTime()
+    local now = GetTime()
+    self.trashCombatStartedAt = now
+    self.trashLastTick = now
+    self.trashLastEvidence = now
+    self.trashEnemies = {}
+    if enemyGUID then self.trashEnemies[enemyGUID] = true end
+    self.trashAllDeadAt = nil
+    self.trashPetOwners = {}
     self.sessionActivity = self.sessionActivity or {}
     self.sessionInactiveCredited = {}
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) then
             local fullName = I.GetUnitIdentity(unit)
-            if fullName then self.sessionActivity[fullName] = GetTime() end
+            if fullName then
+                self.sessionActivity[fullName] = now
+                local petUnit
+                if unit == "player" then
+                    petUnit = "pet"
+                else
+                    local partyIndex = unit:match("^party(%d+)$")
+                    local raidIndex = unit:match("^raid(%d+)$")
+                    if partyIndex then petUnit = "partypet" .. partyIndex
+                    elseif raidIndex then petUnit = "raidpet" .. raidIndex end
+                end
+                local petGUID = petUnit and UnitExists(petUnit) and UnitGUID(petUnit)
+                if petGUID then self.trashPetOwners[petGUID] = fullName end
+            end
         end
     end
 end
 
-function ARC:EndTrashCombat()
+function ARC:EndTrashCombat(endedAt)
     local session = self.activeSession
     if not session or not self.trashCombatStartedAt then return end
+    endedAt = tonumber(endedAt) or self.trashLastEvidence or GetTime()
+    endedAt = math.max(self.trashCombatStartedAt, endedAt)
     session.trashCombats = session.trashCombats + 1
-    session.trashCombatSeconds = session.trashCombatSeconds + math.max(0, GetTime() - self.trashCombatStartedAt)
-    self.trashCombatStartedAt, self.trashLastTick, self.sessionInactiveCredited = nil, nil, nil
+    session.trashCombatSeconds = session.trashCombatSeconds + (endedAt - self.trashCombatStartedAt)
+    self.trashCombatStartedAt, self.trashLastTick, self.trashLastEvidence = nil, nil, nil
+    self.trashEnemies, self.trashAllDeadAt, self.trashPetOwners = nil, nil, nil
+    self.sessionInactiveCredited = nil
 end
 
 function ARC:TickTrashInactivity()
     local session = self.activeSession
     if not session or not self.trashCombatStartedAt or self.currentEncounter then return end
-    local now = GetTime()
-    local delta = math.max(0, math.min(2, now - (self.trashLastTick or now)))
+    local wallNow = GetTime()
+    -- Only advance to real combat-log evidence. The six-second anti-stuck
+    -- grace period must not become fake inactivity after a pack has ended.
+    local now = math.min(wallNow, self.trashLastEvidence or wallNow)
+    local delta = math.max(0, now - (self.trashLastTick or now))
     self.trashLastTick = now
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) and ((not UnitIsConnected) or UnitIsConnected(unit)) and
@@ -238,16 +436,31 @@ function ARC:TickTrashInactivity()
             local fullName = I.GetUnitIdentity(unit)
             local member = fullName and session.members[fullName]
             local lastActivity = fullName and self.sessionActivity and self.sessionActivity[fullName]
+            if member then
+                member.trashEligibleSeconds = (member.trashEligibleSeconds or 0) + delta
+            end
             if member and lastActivity and now - lastActivity >= INACTIVE_AFTER then
                 self.sessionInactiveCredited = self.sessionInactiveCredited or {}
                 if not self.sessionInactiveCredited[fullName] then
-                    member.trashInactiveSeconds = member.trashInactiveSeconds + (now - lastActivity)
+                    member.trashInactiveSeconds = (member.trashInactiveSeconds or 0) + (now - lastActivity)
                     self.sessionInactiveCredited[fullName] = true
                 else
-                    member.trashInactiveSeconds = member.trashInactiveSeconds + delta
+                    member.trashInactiveSeconds = (member.trashInactiveSeconds or 0) + delta
                 end
+                member.trashLongestInactiveSeconds = math.max(member.trashLongestInactiveSeconds or 0, now - lastActivity)
+            end
+        else
+            local fullName = UnitExists(unit) and I.GetUnitIdentity(unit)
+            if fullName and self.sessionActivity then
+                self.sessionActivity[fullName] = now
+                if self.sessionInactiveCredited then self.sessionInactiveCredited[fullName] = nil end
             end
         end
+    end
+    if self.trashAllDeadAt and wallNow - self.trashAllDeadAt >= TRASH_DEAD_END_AFTER then
+        self:EndTrashCombat(self.trashAllDeadAt)
+    elseif self.trashLastEvidence and wallNow - self.trashLastEvidence >= TRASH_IDLE_END_AFTER then
+        self:EndTrashCombat(self.trashLastEvidence)
     end
 end
 
@@ -257,45 +470,72 @@ local ACTIVE_EVENTS = {
     SPELL_CAST_SUCCESS=true, SPELL_INTERRUPT=true, SPELL_DISPEL=true, SPELL_STOLEN=true,
 }
 
-local function PetUnitForOwner(unit)
-    if unit == "player" then return "pet" end
-    local partyIndex = unit:match("^party(%d+)$")
-    if partyIndex then return "partypet" .. partyIndex end
-    local raidIndex = unit:match("^raid(%d+)$")
-    if raidIndex then return "raidpet" .. raidIndex end
-end
+local TRASH_EVIDENCE_EVENTS = {
+    SWING_DAMAGE=true, RANGE_DAMAGE=true, SPELL_DAMAGE=true, SPELL_PERIODIC_DAMAGE=true,
+    DAMAGE_SHIELD=true, SWING_MISSED=true, RANGE_MISSED=true, SPELL_MISSED=true,
+    SPELL_INTERRUPT=true, SPELL_DISPEL=true, SPELL_STOLEN=true,
+}
 
 local function ResolveCombatMember(session, sourceGUID, sourceName)
     local fullName = PlayerKey(sourceName)
     local member = fullName and session.members[fullName]
-    if member then return fullName, member end
+    if member then return fullName, member, false end
     for key, candidate in pairs(session.members) do
-        if candidate.name == sourceName or key == sourceName then return key, candidate end
+        if candidate.name == sourceName or key == sourceName then return key, candidate, false end
     end
-    if sourceGUID then
-        for _, unit in ipairs(I.GetGroupUnits()) do
-            local petUnit = PetUnitForOwner(unit)
-            if petUnit and UnitExists(petUnit) and UnitGUID(petUnit) == sourceGUID then
-                local ownerName = I.GetUnitIdentity(unit)
-                if ownerName and session.members[ownerName] then return ownerName, session.members[ownerName] end
-            end
-        end
+    local ownerName = sourceGUID and ARC.trashPetOwners and ARC.trashPetOwners[sourceGUID]
+    if ownerName and session.members[ownerName] then
+        return ownerName, session.members[ownerName], true
     end
+end
+
+local function HasTrackedEnemy(enemies)
+    for _ in pairs(enemies or {}) do return true end
+    return false
 end
 
 function ARC:SessionCombatLog(...)
     local session = self.activeSession
     if not session then return end
     local _, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName = ...
-    if ACTIVE_EVENTS[subevent] and sourceName and self.trashCombatStartedAt and not self.currentEncounter then
-        local fullName, member = ResolveCombatMember(session, sourceGUID, sourceName)
-        if member then
+    local sourceFullName, sourceMember, sourceIsPet = ResolveCombatMember(session, sourceGUID, sourceName)
+    local _, destMember = ResolveCombatMember(session, destGUID, destName)
+
+    -- A real exchange between a group member (or their pet) and an external
+    -- unit opens/keeps the pack. Combat flags alone are deliberately ignored.
+    if not self.currentEncounter and TRASH_EVIDENCE_EVENTS[subevent] then
+        local enemyGUID
+        if sourceMember and not destMember then enemyGUID = destGUID
+        elseif destMember and not sourceMember then enemyGUID = sourceGUID end
+        if enemyGUID then
+            if not self.trashCombatStartedAt then self:StartTrashCombat(enemyGUID) end
+            if self.trashCombatStartedAt then
+                self.trashEnemies = self.trashEnemies or {}
+                self.trashEnemies[enemyGUID] = true
+                self.trashLastEvidence = GetTime()
+                self.trashAllDeadAt = nil
+            end
+        end
+    end
+
+    -- Pet events may prove that the pack exists, but never credit the owner as
+    -- active. Sending a pet while the player idles must still accrue inactivity.
+    if ACTIVE_EVENTS[subevent] and sourceMember and not sourceIsPet and self.trashCombatStartedAt and not self.currentEncounter then
+        local fullName, member = sourceFullName, sourceMember
+        if fullName and member then
             self.sessionActivity = self.sessionActivity or {}
             self.sessionActivity[fullName] = GetTime()
             if self.sessionInactiveCredited then self.sessionInactiveCredited[fullName] = nil end
-            member.trashActivityEvents = member.trashActivityEvents + 1
         end
-    elseif subevent == "UNIT_DIED" and destName then
+    end
+
+    if subevent == "UNIT_DIED" and self.trashCombatStartedAt and destGUID and self.trashEnemies and self.trashEnemies[destGUID] then
+        self.trashEnemies[destGUID] = nil
+        self.trashLastEvidence = GetTime()
+        if not HasTrackedEnemy(self.trashEnemies) then self.trashAllDeadAt = GetTime() end
+    end
+
+    if subevent == "UNIT_DIED" and destName then
         local fullName, member = PlayerKey(destName), nil
         member = fullName and session.members[fullName]
         if not member then
@@ -306,10 +546,18 @@ function ARC:SessionCombatLog(...)
         if member then
             member.deaths = (member.deaths or 0) + 1
             if self.currentEncounter then
+                member.bossDeaths = (member.bossDeaths or 0) + 1
                 local pull = self.currentEncounter
                 local death = { name = member.name, at = math.max(0, GetTime() - (pull.startedUptime or GetTime())) }
                 pull.deaths[#pull.deaths + 1] = death
-                if not pull.firstDeath then pull.firstDeath = death end
+                if not pull.firstDeath then
+                    pull.firstDeath = death
+                    member.firstDeaths = (member.firstDeaths or 0) + 1
+                end
+            elseif self.trashCombatStartedAt then
+                member.trashDeaths = (member.trashDeaths or 0) + 1
+            else
+                member.otherDeaths = (member.otherDeaths or 0) + 1
             end
         end
     end
@@ -317,81 +565,91 @@ end
 
 function ARC:SessionReadyCheckFinished()
     local session = self.activeSession
-    if not session or #session.readyChecks >= MAX_READY_CHECKS then return end
-    local snapshot = { at = WallTime(), issues = {}, ready = 0, notReady = 0, waiting = 0 }
-    for _, fullName in ipairs(self.order) do
-        local e = self.roster[fullName]
-        local issues = self.GetConfirmedIssueTags and self:GetConfirmedIssueTags(e) or {}
-        if e.online == false then issues[#issues + 1] = "offline"
-        elseif e.dead then issues[#issues + 1] = "dead"
-        elseif e.afk then issues[#issues + 1] = "AFK" end
-        if e.ready == "ready" then snapshot.ready = snapshot.ready + 1
-        elseif e.ready == "notready" then
-            snapshot.notReady = snapshot.notReady + 1
-            issues[#issues + 1] = "not ready"
-        else snapshot.waiting = snapshot.waiting + 1 end
-        if #issues > 0 then snapshot.issues[#snapshot.issues + 1] = e.name .. ": " .. table.concat(issues, ", ") end
+    if not session then return end
+    session.readyCheckCount = math.min(MAX_READY_CHECKS, (session.readyCheckCount or #(session.readyChecks or {})) + 1)
+end
+
+local function ReadyCheckCount(session)
+    return session.readyCheckCount or #(session.readyChecks or {})
+end
+
+local function BossKey(pull, fallback)
+    local encounterID = tonumber(pull.encounterID)
+    if encounterID and encounterID > 0 then return tostring(encounterID) end
+    return pull.name or tostring(fallback or "Unknown")
+end
+
+local function TrashCombatSeconds(session)
+    local seconds = session.trashCombatSeconds or 0
+    if session == ARC.activeSession and ARC.trashCombatStartedAt then
+        seconds = seconds + math.max(0, (ARC.trashLastEvidence or GetTime()) - ARC.trashCombatStartedAt)
     end
-    session.readyChecks[#session.readyChecks + 1] = snapshot
+    return seconds
+end
+
+local function SessionStats(session)
+    local kills, bossSeconds, killedBosses = 0, 0, {}
+    for _, pull in ipairs(session.pulls or {}) do
+        if pull.success then kills = kills + 1; killedBosses[BossKey(pull)] = true end
+        bossSeconds = bossSeconds + (pull.duration or 0)
+    end
+    local uniqueKills = 0
+    for _ in pairs(killedBosses) do uniqueKills = uniqueKills + 1 end
+    return kills, uniqueKills, bossSeconds
+end
+
+local function MemberMetrics(session, member, ended)
+    local sessionLength = math.max(1, ended - (session.startedAt or ended))
+    local present = (member.totalPresent or 0) + (member.presentSince and math.max(0, ended - member.presentSince) or 0)
+    local offline = (member.offlineSeconds or 0) + (member.offlineSince and math.max(0, ended - member.offlineSince) or 0)
+    local eligible = member.trashEligibleSeconds or 0
+    local rawInactive = member.trashInactiveSeconds or 0
+    local inactive = eligible > 0 and math.min(eligible, rawInactive) or rawInactive
+    local inactivePct = eligible > 0 and math.floor((inactive / eligible) * 100 + 0.5) or nil
+    local attendancePct = math.min(100, math.floor((present / sessionLength) * 100 + 0.5))
+    return present, attendancePct, offline, inactive, inactivePct
+end
+
+local function DeathBreakdown(member)
+    local total = member.deaths or 0
+    local boss, trash = member.bossDeaths or 0, member.trashDeaths or 0
+    local other = member.otherDeaths
+    if other == nil then other = math.max(0, total - boss - trash) end
+    return total, boss, trash, other, member.firstDeaths or 0
 end
 
 local function BuildReport(session)
     if not session then return "No raid session recorded yet." end
     local ended = session.endedAt or WallTime()
+    local _, uniqueKills, bossSeconds = SessionStats(session)
     local lines = {
         "ARC RAID SESSION REPORT",
-        string.format("%s | difficulty %s", session.instance or "Unknown", session.difficulty or "?"),
-        string.format("%s - %s%s", DisplayTime(session.startedAt), session.endedAt and DisplayTime(session.endedAt) or "ACTIVE",
-            session.endedAt and "" or " (live)"),
-        string.format("Duration: %s", FormatDuration(ended - (session.startedAt or ended))),
-        "",
+        string.format("%s | difficulty %s | %s", session.instance or "Unknown", session.difficulty or "?", session.endedAt and "FINISHED" or "ACTIVE"),
+        string.format("%s - %s | duration %s", DisplayTime(session.startedAt), session.endedAt and DisplayTime(session.endedAt) or "ACTIVE", FormatDuration(ended - (session.startedAt or ended))),
+        string.format("Bosses killed: %d | pulls: %d | ready checks: %d", uniqueKills, #(session.pulls or {}), ReadyCheckCount(session)),
+        string.format("Boss combat: %s | trash combat: %s", FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(session))),
+        "", "PLAYERS",
     }
-    local kills, bossSeconds = 0, 0
-    for _, pull in ipairs(session.pulls or {}) do
-        if pull.success then kills = kills + 1 end
-        bossSeconds = bossSeconds + (pull.duration or 0)
-    end
-    lines[#lines + 1] = string.format("Pulls: %d | kills: %d | boss combat: %s", #(session.pulls or {}), kills, FormatDuration(bossSeconds))
-    lines[#lines + 1] = string.format("Trash combats: %d | trash combat: %s", session.trashCombats or 0, FormatDuration(session.trashCombatSeconds or 0))
-    local combatSeconds = bossSeconds + (session.trashCombatSeconds or 0)
-    lines[#lines + 1] = string.format("Tracked combat: %s | between combat: ~%s", FormatDuration(combatSeconds),
-        FormatDuration(math.max(0, ended - (session.startedAt or ended) - combatSeconds)))
-    lines[#lines + 1] = string.format("Ready checks: %d", #(session.readyChecks or {}))
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "BOSSES"
-    if #(session.pulls or {}) == 0 then lines[#lines + 1] = "No encounter events recorded." end
-    for index, pull in ipairs(session.pulls or {}) do
-        local death = pull.firstDeath and (" | first death: " .. pull.firstDeath.name .. " @ " .. FormatDuration(pull.firstDeath.at)) or ""
-        local result = pull.success and "KILL" or (pull.interrupted and "session ended mid-pull" or "wipe")
-        lines[#lines + 1] = string.format("%d. %s - %s (%s)%s", index, pull.name or "Unknown", result,
-            FormatDuration(pull.duration or 0), death)
-    end
-    lines[#lines + 1] = ""
-    lines[#lines + 1] = "ATTENDANCE / ACTIVITY"
     local members = {}
     for _, member in pairs(session.members or {}) do members[#members + 1] = member end
     table.sort(members, function(a, b) return (a.name or "") < (b.name or "") end)
     for _, member in ipairs(members) do
-        local present = (member.totalPresent or 0) + (member.presentSince and math.max(0, ended - member.presentSince) or 0)
-        local afk = (member.afkSeconds or 0) + (member.afkSince and math.max(0, ended - member.afkSince) or 0)
-        local sessionLength = math.max(1, ended - (session.startedAt or ended))
-        lines[#lines + 1] = string.format("%s - present %s (%d%%) | AFK flag %s | trash inactive ~%s | pulls %d | deaths %d",
-            member.name or member.fullName, FormatDuration(present), math.min(100, math.floor((present / sessionLength) * 100 + 0.5)), FormatDuration(afk),
-            FormatDuration(member.trashInactiveSeconds or 0), member.pulls or 0, member.deaths or 0)
+        local _, attendance, offline, inactive, inactivePct = MemberMetrics(session, member, ended)
+        local deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths = DeathBreakdown(member)
+        lines[#lines + 1] = string.format("%s | attendance %d%% | offline %s | trash idle %s%s | pulls %d | deaths %d (boss %d, trash %d, other %d, first %d)",
+            member.name or member.fullName, attendance, FormatDuration(offline), FormatDuration(inactive), inactivePct and (" / " .. inactivePct .. "%") or " / -",
+            member.pulls or 0, deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths)
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "READY CHECK ISSUES"
-    local anyIssues = false
-    for index, check in ipairs(session.readyChecks or {}) do
-        if #(check.issues or {}) > 0 then
-            anyIssues = true
-            lines[#lines + 1] = string.format("Check %d (%d ready/%d not ready/%d waiting)", index, check.ready or 0, check.notReady or 0, check.waiting or 0)
-            for _, issue in ipairs(check.issues) do lines[#lines + 1] = "  " .. issue end
-        end
+    lines[#lines + 1] = "BOSSES"
+    if #(session.pulls or {}) == 0 then lines[#lines + 1] = "No encounter events recorded." end
+    for index, pull in ipairs(session.pulls or {}) do
+        local death = pull.firstDeath and (" | first death " .. pull.firstDeath.name .. " @ " .. FormatDuration(pull.firstDeath.at)) or ""
+        local result = pull.success and "KILL" or (pull.interrupted and "INTERRUPTED" or "WIPE")
+        lines[#lines + 1] = string.format("%d. %s | %s | %s%s", index, pull.name or "Unknown", result, FormatDuration(pull.duration or 0), death)
     end
-    if not anyIssues then lines[#lines + 1] = "No confirmed issues recorded." end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "Trash inactivity is an estimate: time after 10s without damage, healing, interrupt, dispel or successful casts during trash combat."
+    lines[#lines + 1] = string.format("Trash idle is estimated after %ds without personal activity; pet-only activity never credits its owner.", INACTIVE_AFTER)
     return table.concat(lines, "\n")
 end
 
@@ -399,9 +657,255 @@ function ARC:GetSessionReportText(session)
     return BuildReport(session or self:GetReportSession())
 end
 
+local PLAYER_COLUMNS = {
+    { key="name", label="Player", x=0, width=175 },
+    { key="attendance", label="Attendance", x=175, width=90 },
+    { key="offline", label="Offline", x=265, width=85 },
+    { key="inactivePct", label="Trash idle", x=350, width=145 },
+    { key="pulls", label="Pulls", x=495, width=65 },
+    { key="deaths", label="Deaths", x=560, width=85 },
+}
+
+local BOSS_COLUMNS = {
+    { label="Boss", x=0, width=220 }, { label="Attempts", x=220, width=80 },
+    { label="Result", x=300, width=90 }, { label="Combat time", x=390, width=100 },
+    { label="First deaths", x=490, width=155 },
+}
+
+local function SetCell(cell, text, r, g, b)
+    cell:SetText(text or "")
+    cell:SetTextColor(r or 0.9, g or 0.9, b or 0.9)
+end
+
+local function CreateCells(row, columns)
+    row.cells = {}
+    for index, column in ipairs(columns) do
+        local cell = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        cell:SetPoint("LEFT", row, "LEFT", column.x + 4, 0)
+        cell:SetWidth(column.width - 8)
+        cell:SetJustifyH(index == 1 and "LEFT" or "CENTER")
+        row.cells[index] = cell
+    end
+end
+
+local function EnsureHeader(frame, kind, columns)
+    local key = kind .. "Header"
+    if frame[key] then return frame[key] end
+    local header = CreateFrame("Frame", nil, frame[kind .. "Child"])
+    header:SetSize(645, 24)
+    header.bg = header:CreateTexture(nil, "BACKGROUND")
+    header.bg:SetAllPoints()
+    header.bg:SetTexture(1, 1, 1, 0.1)
+    header.buttons = {}
+    for index, column in ipairs(columns) do
+        local button = CreateFrame("Button", nil, header)
+        button:SetPoint("TOPLEFT", column.x, 0)
+        button:SetSize(column.width, 24)
+        local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        label:SetAllPoints()
+        label:SetJustifyH(index == 1 and "LEFT" or "CENTER")
+        label:SetText(column.label)
+        button.label = label
+        if kind == "players" then
+            local sortColumn = column.key
+            button:SetScript("OnClick", function()
+                local newKey = sortColumn
+                if frame.playerSort == newKey then frame.playerSortDesc = not frame.playerSortDesc
+                else frame.playerSort, frame.playerSortDesc = newKey, newKey ~= "name" end
+                ARC:RefreshSessionReport()
+            end)
+        end
+        header.buttons[index] = button
+    end
+    frame[key] = header
+    return header
+end
+
+local function EnsurePlayerRow(frame, index)
+    frame.playerRows = frame.playerRows or {}
+    local row = frame.playerRows[index]
+    if row then return row end
+    row = CreateFrame("Frame", nil, frame.playersChild)
+    row:SetSize(645, 23)
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    row.bg:SetTexture(1, 1, 1, index % 2 == 0 and 0.045 or 0.02)
+    CreateCells(row, PLAYER_COLUMNS)
+    local deathHover = CreateFrame("Frame", nil, row)
+    deathHover:SetPoint("TOPLEFT", row, "TOPLEFT", 560, 0)
+    deathHover:SetSize(85, 23)
+    deathHover:EnableMouse(true)
+    deathHover:SetScript("OnEnter", function(self)
+        local member = self.owner.member
+        if not member then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:ClearLines()
+        local deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths = DeathBreakdown(member)
+        GameTooltip:AddLine(member.name or member.fullName or "Player", 1, 1, 1)
+        GameTooltip:AddLine("Deaths: " .. deaths, 0.9, 0.9, 0.9)
+        GameTooltip:AddLine("Boss: " .. bossDeaths, 0.85, 0.85, 0.85)
+        GameTooltip:AddLine("Trash: " .. trashDeaths, 0.85, 0.85, 0.85)
+        GameTooltip:AddLine("Other / unknown: " .. otherDeaths, 0.85, 0.85, 0.85)
+        GameTooltip:AddLine("First deaths: " .. firstDeaths, 0.85, 0.85, 0.85)
+        GameTooltip:AddLine("Longest trash idle: " .. FormatDuration(member.trashLongestInactiveSeconds or 0), 0.8, 0.8, 0.8)
+        GameTooltip:Show()
+    end)
+    deathHover:SetScript("OnLeave", function() GameTooltip:Hide() end)
+    deathHover.owner = row
+    row.deathHover = deathHover
+    frame.playerRows[index] = row
+    return row
+end
+
+local function PlayerValues(session, member, ended)
+    local _, attendance, offline, inactive, inactivePct = MemberMetrics(session, member, ended)
+    return {
+        name = member.name or member.fullName or "?", attendance = attendance,
+        offline = offline, inactive = inactive, inactivePct = inactivePct or -1,
+        pulls = member.pulls or 0, deaths = member.deaths or 0,
+    }
+end
+
+local function RenderPlayers(frame, session)
+    local header = EnsureHeader(frame, "players", PLAYER_COLUMNS)
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", 0, 0)
+    header:Show()
+    local ended = session.endedAt or WallTime()
+    local rows = {}
+    for _, member in pairs(session.members or {}) do rows[#rows + 1] = { member=member, values=PlayerValues(session, member, ended) } end
+    local sortKey, descending = frame.playerSort or "name", frame.playerSortDesc
+    for index, button in ipairs(header.buttons or {}) do
+        local column = PLAYER_COLUMNS[index]
+        button.label:SetText(column.label .. (column.key == sortKey and (descending and " v" or " ^") or ""))
+    end
+    table.sort(rows, function(a, b)
+        local av, bv = a.values[sortKey], b.values[sortKey]
+        if av == bv then return a.values.name < b.values.name end
+        if descending then return av > bv end
+        return av < bv
+    end)
+    for index, data in ipairs(rows) do
+        local row = EnsurePlayerRow(frame, index)
+        row.member = data.member
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -(index * 23 + 1))
+        local v, classColor = data.values, data.member.class and RAID_CLASS_COLORS and RAID_CLASS_COLORS[data.member.class]
+        SetCell(row.cells[1], v.name, classColor and classColor.r or 1, classColor and classColor.g or 1, classColor and classColor.b or 1)
+        SetCell(row.cells[2], v.attendance .. "%")
+        SetCell(row.cells[3], FormatDuration(v.offline))
+        if v.inactivePct < 0 then
+            SetCell(row.cells[4], v.inactive > 0 and (FormatDuration(v.inactive) .. "  -") or "-")
+        elseif v.inactivePct <= 5 then
+            SetCell(row.cells[4], FormatDuration(v.inactive) .. "  " .. v.inactivePct .. "%", 0.25, 1, 0.25)
+        elseif v.inactivePct <= 30 then
+            SetCell(row.cells[4], FormatDuration(v.inactive) .. "  " .. v.inactivePct .. "%", 1, 0.82, 0.15)
+        else
+            SetCell(row.cells[4], FormatDuration(v.inactive) .. "  " .. v.inactivePct .. "%", 1, 0.2, 0.2)
+        end
+        SetCell(row.cells[5], tostring(v.pulls))
+        SetCell(row.cells[6], tostring(v.deaths))
+        row:Show()
+    end
+    for index = #rows + 1, #(frame.playerRows or {}) do frame.playerRows[index]:Hide() end
+    frame.playersChild:SetHeight(math.max(1, (#rows + 1) * 23 + 4))
+end
+
+local function AggregateBosses(session)
+    local bosses, order = {}, {}
+    for index, pull in ipairs(session.pulls or {}) do
+        local key = BossKey(pull, index)
+        local boss = bosses[key]
+        if not boss then
+            boss = { key=key, name=pull.name or "Unknown", pulls={}, attempts=0, kills=0, duration=0, firstDeaths={} }
+            bosses[key], order[#order + 1] = boss, key
+        end
+        boss.attempts = boss.attempts + 1
+        boss.duration = boss.duration + (pull.duration or 0)
+        if pull.success then boss.kills = boss.kills + 1 end
+        if pull.firstDeath and pull.firstDeath.name then
+            boss.firstDeaths[pull.firstDeath.name] = (boss.firstDeaths[pull.firstDeath.name] or 0) + 1
+        end
+        boss.pulls[#boss.pulls + 1] = pull
+    end
+    local result = {}
+    for _, key in ipairs(order) do result[#result + 1] = bosses[key] end
+    return result
+end
+
+local function FirstDeathSummary(counts)
+    local values = {}
+    for name, count in pairs(counts or {}) do values[#values + 1] = { name=name, count=count } end
+    table.sort(values, function(a, b) return a.count == b.count and a.name < b.name or a.count > b.count end)
+    local text = {}
+    for index = 1, math.min(2, #values) do
+        text[#text + 1] = values[index].name .. (values[index].count > 1 and (" x" .. values[index].count) or "")
+    end
+    return #text > 0 and table.concat(text, ", ") or "-"
+end
+
+local function EnsureBossRow(frame, index)
+    frame.bossRows = frame.bossRows or {}
+    local row = frame.bossRows[index]
+    if row then return row end
+    row = CreateFrame("Button", nil, frame.bossesChild)
+    row:SetSize(645, 23)
+    row.bg = row:CreateTexture(nil, "BACKGROUND")
+    row.bg:SetAllPoints()
+    CreateCells(row, BOSS_COLUMNS)
+    row:SetScript("OnClick", function(self)
+        if not self.bossKey then return end
+        frame.expandedBoss = frame.expandedBoss == self.bossKey and nil or self.bossKey
+        ARC:RefreshSessionReport()
+    end)
+    frame.bossRows[index] = row
+    return row
+end
+
+local function RenderBosses(frame, session)
+    local header = EnsureHeader(frame, "bosses", BOSS_COLUMNS)
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", 0, 0)
+    header:Show()
+    local line = 0
+    for _, boss in ipairs(AggregateBosses(session)) do
+        line = line + 1
+        local row = EnsureBossRow(frame, line)
+        row.bossKey = boss.key
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", 0, -(line * 23 + 1))
+        row.bg:SetTexture(1, 1, 1, line % 2 == 0 and 0.05 or 0.025)
+        SetCell(row.cells[1], (frame.expandedBoss == boss.key and "- " or "+ ") .. boss.name)
+        SetCell(row.cells[2], tostring(boss.attempts))
+        SetCell(row.cells[3], boss.kills > 0 and "KILL" or "PROGRESS", boss.kills > 0 and 0.25 or 1, boss.kills > 0 and 1 or 0.82, boss.kills > 0 and 0.25 or 0.15)
+        SetCell(row.cells[4], FormatDuration(boss.duration))
+        SetCell(row.cells[5], FirstDeathSummary(boss.firstDeaths))
+        row:Show()
+        if frame.expandedBoss == boss.key then
+            for attempt, pull in ipairs(boss.pulls) do
+                line = line + 1
+                local detail = EnsureBossRow(frame, line)
+                detail.bossKey = nil
+                detail:ClearAllPoints()
+                detail:SetPoint("TOPLEFT", 0, -(line * 23 + 1))
+                detail.bg:SetTexture(0.2, 0.6, 1, 0.06)
+                SetCell(detail.cells[1], "    #" .. attempt)
+                SetCell(detail.cells[2], "")
+                SetCell(detail.cells[3], pull.success and "KILL" or (pull.interrupted and "STOPPED" or "WIPE"))
+                SetCell(detail.cells[4], FormatDuration(pull.duration or 0))
+                local death = pull.firstDeath and (pull.firstDeath.name .. " @ " .. FormatDuration(pull.firstDeath.at)) or "-"
+                SetCell(detail.cells[5], death)
+                detail:Show()
+            end
+        end
+    end
+    for index = line + 1, #(frame.bossRows or {}) do frame.bossRows[index]:Hide() end
+    frame.bossesChild:SetHeight(math.max(1, (line + 1) * 23 + 4))
+end
+
 local function BuildSessionFrame()
     local frame = CreateFrame("Frame", "ARCSessionReportFrame", UIParent)
-    frame:SetSize(720, 540)
+    frame:SetSize(720, 560)
     frame:SetPoint("CENTER")
     frame:SetFrameStrata("HIGH")
     frame:SetClampedToScreen(true)
@@ -421,11 +925,29 @@ local function BuildSessionFrame()
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
     frame.closeButton = close
-    local scroll = CreateFrame("ScrollFrame", "ARCSessionReportScroll", frame, "UIPanelScrollFrameTemplate")
-    scroll:SetPoint("TOPLEFT", 18, -48)
+    local summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    summary:SetPoint("TOPLEFT", 18, -46)
+    summary:SetWidth(674)
+    summary:SetHeight(54)
+    summary:SetJustifyH("LEFT")
+    frame.summary = summary
+
+    local function CreateTableScroll(name)
+        local scroll = CreateFrame("ScrollFrame", name, frame, "UIPanelScrollFrameTemplate")
+        scroll:SetPoint("TOPLEFT", 18, -132)
+        scroll:SetPoint("BOTTOMRIGHT", -34, 52)
+        local child = CreateFrame("Frame", nil, scroll)
+        child:SetSize(645, 1)
+        scroll:SetScrollChild(child)
+        return scroll, child
+    end
+    frame.playersScroll, frame.playersChild = CreateTableScroll("ARCSessionPlayersScroll")
+    frame.bossesScroll, frame.bossesChild = CreateTableScroll("ARCSessionBossesScroll")
+    local scroll = CreateFrame("ScrollFrame", "ARCSessionExportScroll", frame, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 18, -132)
     scroll:SetPoint("BOTTOMRIGHT", -34, 52)
     local edit = CreateFrame("EditBox", nil, scroll)
-    edit:SetWidth(650)
+    edit:SetWidth(645)
     edit:SetMultiLine(true)
     edit:SetAutoFocus(false)
     edit:SetFontObject(GameFontHighlightSmall)
@@ -436,12 +958,29 @@ local function BuildSessionFrame()
     -- through a transparent FontString instead; it uses the same width/font
     -- and keeps the EditBox tall enough for the scroll frame.
     local measure = frame:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    measure:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -48)
-    measure:SetWidth(650)
+    measure:SetPoint("TOPLEFT", frame, "TOPLEFT", 18, -132)
+    measure:SetWidth(645)
     measure:SetJustifyH("LEFT")
     measure:SetWordWrap(true)
     measure:SetAlpha(0)
     frame.textMeasure = measure
+
+    frame.activeTab = "players"
+    frame.tabs = {}
+    local function AddTab(key, label, anchor, x)
+        local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+        button:SetSize(92, 22)
+        if anchor then button:SetPoint("LEFT", anchor, "RIGHT", x or 6, 0)
+        else button:SetPoint("TOPLEFT", 18, -103) end
+        button:SetText(label)
+        button:SetScript("OnClick", function() frame.activeTab = key; ARC:RefreshSessionReport() end)
+        frame.tabs[key] = button
+        return button
+    end
+    local playersTab = AddTab("players", "Players")
+    local bossesTab = AddTab("bosses", "Bosses", playersTab, 6)
+    local exportTab = AddTab("export", "Export", bossesTab, 6)
+
     frame.toggle = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.toggle:SetSize(130, 22)
     frame.toggle:SetPoint("BOTTOMLEFT", 18, 18)
@@ -476,8 +1015,16 @@ local function BuildSessionFrame()
     frame.refresh:SetPoint("LEFT", frame.next, "RIGHT", 8, 0)
     frame.refresh:SetText("Refresh")
     frame.refresh:SetScript("OnClick", function() ARC:RefreshSessionReport() end)
+    frame.delete = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    frame.delete:SetSize(110, 22)
+    frame.delete:SetPoint("LEFT", frame.refresh, "RIGHT", 8, 0)
+    frame.delete:SetText("Delete Report")
+    frame.delete:SetScript("OnClick", function()
+        ARC:RequestDeleteRaidSession(ARC:GetReportSession(frame.historyOffset))
+    end)
     frame.scroll = scroll
-    frame.buttons = { frame.toggle, frame.select, frame.previous, frame.next, frame.refresh }
+    frame.scrolls = { frame.playersScroll, frame.bossesScroll, scroll }
+    frame.buttons = { frame.toggle, frame.select, frame.previous, frame.next, frame.refresh, frame.delete, playersTab, bossesTab, exportTab }
     frame.historyOffset = 0
     frame:Hide()
     return frame
@@ -498,8 +1045,10 @@ local function SkinSessionFrame(frame)
     end
     if S and S.HandleCloseButton then pcall(S.HandleCloseButton, S, frame.closeButton) end
     if S and S.HandleScrollBar then
-        local bar = _G[frame.scroll:GetName() .. "ScrollBar"]
-        if bar then pcall(S.HandleScrollBar, S, bar) end
+        for _, scroll in ipairs(frame.scrolls or {}) do
+            local bar = scroll:GetName() and _G[scroll:GetName() .. "ScrollBar"]
+            if bar then pcall(S.HandleScrollBar, S, bar) end
+        end
     end
 end
 
@@ -510,7 +1059,8 @@ end
 function ARC:RefreshSessionReport(session)
     local frame = self.sessionFrame
     if not frame then return end
-    local reportText = self:GetSessionReportText(session or self:GetReportSession(frame.historyOffset))
+    local selected = session or self:GetReportSession(frame.historyOffset)
+    local reportText = self:GetSessionReportText(selected)
     frame.text:SetText(reportText)
     frame.text:SetCursorPosition(0)
     local measuredHeight = 0
@@ -522,6 +1072,34 @@ function ARC:RefreshSessionReport(session)
         end
     end
     frame.text:SetHeight(math.max(450, measuredHeight + 20))
+    if selected then
+        local ended = selected.endedAt or WallTime()
+        local _, uniqueKills, bossSeconds = SessionStats(selected)
+        local position, total = ReportPosition(selected)
+        local status = selected.endedAt and "FINISHED" or "ACTIVE"
+        frame.summary:SetText(string.format("Session %d / %d  |  %s  |  Difficulty %s  |  %s\n%s - %s  |  Duration %s\nBosses %d  |  Pulls %d  |  Ready checks %d  |  Boss %s  |  Trash %s",
+            position, total, selected.instance or "Unknown", selected.difficulty or "?", status,
+            DisplayTime(selected.startedAt), selected.endedAt and DisplayTime(selected.endedAt) or "now",
+            FormatDuration(ended - (selected.startedAt or ended)), uniqueKills, #(selected.pulls or {}),
+            ReadyCheckCount(selected), FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(selected))))
+        RenderPlayers(frame, selected)
+        RenderBosses(frame, selected)
+    else
+        frame.summary:SetText("No raid session recorded yet.")
+        if frame.playersHeader then frame.playersHeader:Hide() end
+        if frame.bossesHeader then frame.bossesHeader:Hide() end
+        for _, row in ipairs(frame.playerRows or {}) do row:Hide() end
+        for _, row in ipairs(frame.bossRows or {}) do row:Hide() end
+    end
+    local tab = frame.activeTab or "players"
+    I.SetFrameShown(frame.playersScroll, tab == "players")
+    I.SetFrameShown(frame.bossesScroll, tab == "bosses")
+    I.SetFrameShown(frame.scroll, tab == "export")
+    I.SetFrameShown(frame.select, tab == "export")
+    I.SetFrameShown(frame.delete, selected and selected ~= self.activeSession)
+    for key, button in pairs(frame.tabs or {}) do
+        if key == tab then button:Disable() else button:Enable() end
+    end
     frame.toggle:SetText(self:IsSessionActive() and "End Session" or "Start Session")
     local offset = frame.historyOffset or 0
     if offset > 0 then frame.next:Enable() else frame.next:Disable() end
@@ -536,12 +1114,16 @@ function ARC:ShowSessionReport()
 end
 
 local tracker = CreateFrame("Frame", "ARCSessionEventFrame")
-for _, event in ipairs({ "GROUP_ROSTER_UPDATE", "PLAYER_FLAGS_CHANGED", "ENCOUNTER_START", "ENCOUNTER_END", "COMBAT_LOG_EVENT_UNFILTERED" }) do
+for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "GROUP_ROSTER_UPDATE", "PLAYER_FLAGS_CHANGED", "ENCOUNTER_START", "ENCOUNTER_END", "COMBAT_LOG_EVENT_UNFILTERED" }) do
     tracker:RegisterEvent(event)
 end
 tracker:SetScript("OnEvent", function(_, event, ...)
-    if event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_FLAGS_CHANGED" then
+    if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
+        ARC:UpdateAutoSession()
         ARC:UpdateSessionRoster()
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_FLAGS_CHANGED" then
+        ARC:UpdateSessionRoster()
+        ARC:UpdateAutoSession()
     elseif event == "ENCOUNTER_START" then
         ARC:SessionEncounterStart(...)
     elseif event == "ENCOUNTER_END" then
@@ -552,8 +1134,14 @@ tracker:SetScript("OnEvent", function(_, event, ...)
 end)
 tracker:SetScript("OnUpdate", function(_, elapsed)
     tracker.elapsed = (tracker.elapsed or 0) + elapsed
+    tracker.rosterElapsed = (tracker.rosterElapsed or 0) + elapsed
     if tracker.elapsed >= 1 then
         tracker.elapsed = 0
         ARC:TickTrashInactivity()
+        ARC:UpdateAutoSession()
+    end
+    if tracker.rosterElapsed >= 5 then
+        tracker.rosterElapsed = 0
+        ARC:UpdateSessionRoster()
     end
 end)

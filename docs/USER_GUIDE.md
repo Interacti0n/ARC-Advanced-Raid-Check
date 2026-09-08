@@ -104,12 +104,23 @@ until **Refresh** is clicked.
 
 Target a nearby player and use `/arc check`, click **ARC Check** in the normal
 inspect window, use ARC's roster menu, or choose it in a compatible standard
-player menu. The player does not need ARC and does not need to be in your group.
+player menu. Without another player targeted, `/arc check` checks your own
+character; `/arc check self` always does so directly. Self-checks use local APIs
+instead of Blizzard inspect. Another player does not need ARC or need to be in
+your group.
+
+The Character Info window opened with **C** also has an **ARC Check** button in
+its upper-left header. It always opens the same local self-check and receives
+the ElvUI button skin when ElvUI is active.
 
 The report starts with identity, class/level, spec/role, guild and estimated
 upgraded item level. It then lists only confirmed problems and unverified
 results. Healthy equipment is intentionally omitted because the normal inspect
 window already shows it.
+
+The standalone window intentionally omits Flask, Food, durability and
+Healthstone readiness. Those remain visible in the main raid window; ARC Check
+stays focused on equipment, talents and class/tank/pet requirements.
 
 Problem equipment includes the actual item icon and name. Hover the icon for
 the native item tooltip captured for that snapshot. Empty slots have no icon;
@@ -130,11 +141,21 @@ instead of repeatedly throwing errors.
 
 ## Raid session report
 
-Use **Session Report** in the main window or Options. Sessions are opt-in: start
-one before the raid and end it when finished. ARC records attendance, observed
-AFK flags, encounter pulls/kills, first deaths, ready-check snapshots, trash
-combat and estimated trash inactivity. The newest ten completed reports are
-kept, and an active session survives `/reload`.
+Use **Session Report** in the main window or Options. By default ARC starts a
+session when you enter a raid instance and saves it after you remain outside for
+30 seconds. Wipes, release and `/reload` do not split the session. Automatic
+tracking can be disabled in Options and manual start/end commands remain.
+
+The summary shows **Session X / Y** while Previous/Next browses retained
+sessions. **Delete Report** permanently removes the selected completed report
+after confirmation; ARC never allows deletion of the active session.
+
+The **Players** table shows attendance, offline time, trash inactivity, boss
+pulls and deaths. Trash idle is green through 5%, yellow through 30% and red
+above 30% of eligible trash time. Hover Deaths for boss/trash/other and first-
+death totals. **Bosses** groups and expands attempts; **Export** provides the
+copyable summary. ARC keeps completed sessions for fourteen days and then
+removes them permanently.
 
 See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 
@@ -150,7 +171,8 @@ See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 | `/arc minimap` | Toggle the minimap button |
 | `/arc options` | Open options |
 | `/arc raid` | Configure expected raid and loot settings |
-| `/arc check` | Check the targeted player |
+| `/arc check` | Check the targeted player, or yourself without a player target |
+| `/arc check self` | Check your own character through local APIs |
 | `/arc session` | Open the active or newest session report |
 | `/arc session start` | Begin session tracking |
 | `/arc session end` | Finish and save the active session |

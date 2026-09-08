@@ -11,6 +11,16 @@ link, retaining gems, enchant and upgrade fields. It never reads a new target's
 inventory on hover. Empty slots have no icon; native tooltip data may still
 depend on the client's cache. Refresh the report to capture changed equipment.
 
+## Equipment type and weapon setup
+
+- At level 50 and above, the eight primary armor slots must use the class armor
+  specialization: cloth, leather, mail or plate. Cloaks, jewellery, trinkets and
+  weapons are excluded. ARC reports a failure only when the client returns a
+  recognized localized armor subtype.
+- A loaded one-handed main-hand weapon requires an equipped off-hand item or
+  second weapon. ARC does not report an empty off-hand while its inspect data is
+  still loading, and two-handed or hunter ranged weapons remain valid alone.
+
 ## Gems
 
 - Approved catalog: 186 MoP gem item IDs, including ordinary rare cuts, blue

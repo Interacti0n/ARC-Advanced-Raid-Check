@@ -171,8 +171,19 @@ function ARC:CreateOptionsPanel()
         end
     end)
 
+    local autoSessionCB = CreateFrame("CheckButton", "ARCOptionsAutoSessions", panel, "InterfaceOptionsCheckButtonTemplate")
+    autoSessionCB:SetPoint("TOPLEFT", minimapCB, "BOTTOMLEFT", 0, -4)
+    SetCheckButtonText(autoSessionCB, "Automatically track sessions inside raid instances")
+    autoSessionCB:SetScript("OnClick", function(self)
+        ARC_DB.autoSessions = self:GetChecked() and true or false
+        if not ARC_DB.autoSessions and ARC.activeSession and ARC.activeSession.automatic and ARC.EndRaidSession then
+            ARC:EndRaidSession("settings")
+        end
+        if ARC.UpdateAutoSession then ARC:UpdateAutoSession() end
+    end)
+
     local scaleSlider = CreateFrame("Slider", "ARCOptionsScale", panel, "OptionsSliderTemplate")
-    scaleSlider:SetPoint("TOPLEFT", minimapCB, "BOTTOMLEFT", 6, -28)
+    scaleSlider:SetPoint("TOPLEFT", autoSessionCB, "BOTTOMLEFT", 6, -28)
     scaleSlider:SetWidth(200)
     scaleSlider:SetMinMaxValues(0.6, 1.5)
     scaleSlider:SetValueStep(0.05)
@@ -255,13 +266,14 @@ function ARC:CreateOptionsPanel()
     hint:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 6, -20)
     hint:SetWidth(480)
     hint:SetJustifyH("LEFT")
-    hint:SetText("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report records attendance, pulls, AFK and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified.")
+    hint:SetText("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report tracks attendance, pulls, deaths and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified.")
 
     panel.refresh = function()
         manualCB:SetChecked(ARC_DB.manualMode)
         autohideCB:SetChecked(ARC_DB.autoHide)
         lockCB:SetChecked(ARC_DB.locked)
         minimapCB:SetChecked(not ARC_DB.minimap.hide)
+        autoSessionCB:SetChecked(ARC_DB.autoSessions)
         scaleSlider:SetValue(ARC_DB.scale or 1.0)
         ilvlInput:SetText(tostring(ARC_DB.minItemLevel or 450))
         ilvlInput:ClearFocus()

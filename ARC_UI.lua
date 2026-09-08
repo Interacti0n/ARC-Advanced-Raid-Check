@@ -372,14 +372,14 @@ local function BuildPlayerMenu(e)
                 if e.unit and UnitExists(e.unit) then InspectUnit(e.unit) end
             end,
         }
-        local checkItem = ARC.CreatePlayerCheckMenuItem and ARC:CreatePlayerCheckMenuItem(e.unit, e.fullName)
-        if checkItem then menu[#menu + 1] = checkItem end
         menu[#menu + 1] = {
             text = "Remind (confirmed issues)",
             notCheckable = true,
             func = function() ARC:RemindPlayer(e) end,
         }
     end
+    local checkItem = ARC.CreatePlayerCheckMenuItem and ARC:CreatePlayerCheckMenuItem(e.unit, e.fullName)
+    if checkItem then menu[#menu + 1] = checkItem end
     menu[#menu + 1] = { text = "Close menu", notCheckable = true }
     return menu
 end

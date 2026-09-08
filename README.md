@@ -12,7 +12,7 @@ answering ready checks automatically.
 - talents, class self-buffs, tank stance, pets, Growl and Healthstone checks
 - a clear **READY TO PULL**, **NOT READY** or **CHECK INCOMPLETE** verdict
 - standalone **ARC Check** for a targeted player, even outside your group
-- optional raid-session reports with pulls, attendance and trash inactivity
+- automatic raid-session reports with tables for players, bosses and trash inactivity
 - 25-player scrolling roster and automatic optional ElvUI styling
 
 ## Install
@@ -30,7 +30,7 @@ ElvUI support is detected automatically.
 
 - `/arc` or left-click the minimap icon — show/hide ARC
 - `/arc options` or right-click the minimap icon — open settings
-- `/arc check` — inspect the targeted player in a standalone report
+- `/arc check` — check the targeted player, or your own character without one
 - `/arc raid` — configure expected raid size/difficulty and loot method
 - `/arc session start` / `/arc session end` — record a raid session
 - `/arc help` — show every command
@@ -39,6 +39,10 @@ By default ARC opens when a ready check starts. Enable **Manual opening only**
 in Options if you want to open it yourself. The **Ready** and **Not Ready**
 buttons answer only your own active ready check.
 
+Raid sessions start automatically inside raid instances and finish after you
+remain outside for 30 seconds. This can be disabled in Options; completed
+sessions are retained for fourteen days.
+
 ## Documentation
 
 | Document | Contents |
@@ -46,7 +50,7 @@ buttons answer only your own active ready check.
 | [User guide](docs/USER_GUIDE.md) | Window, colors, commands, settings, ARC Check and common workflows |
 | [Readiness checks](docs/READINESS_CHECKS.md) | Talents, class buffs, tanks, pets, Growl, Healthstones and protocol behavior |
 | [Gear rules](docs/GEAR_RULES.md) | Item level, gems, enchants, primary stats and policy customization |
-| [Session reports](docs/SESSION_REPORT.md) | Pulls, attendance, AFK flags and trash-inactivity tracking |
+| [Session reports](docs/SESSION_REPORT.md) | Automatic sessions, attendance, bosses, deaths and trash inactivity |
 | [Data and limitations](docs/DATA_AND_LIMITATIONS.md) | What inspect, unit APIs and the ARC channel can and cannot provide |
 | [Architecture](docs/ARCHITECTURE.md) | Module ownership, load order and compatibility identifiers |
 | [Testing](docs/TESTING.md) | In-game release verification checklist |
@@ -67,7 +71,7 @@ The product name is **Advanced Raid Check**, but technical identifiers remain
 
 ## Version
 
-Current version: **1.6.2**
+Current version: **1.7.0**
 
 ## License
 

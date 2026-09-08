@@ -13,7 +13,7 @@ other library.
 | `ARC_Inspect.lua` | Inspect queue, specialization and remote equipment fallback |
 | `ARC_UI.lua` | Main roster, tooltips, verdict banner and announcements |
 | `ARC_PlayerCheck.lua` | Standalone report plus inspect/context-menu integration |
-| `ARC_Session.lua` | Attendance, encounters, ready snapshots and activity tracking |
+| `ARC_Session.lua` | Automatic session lifecycle, attendance, encounters, deaths and activity tables |
 | `ARC_Options.lua` | Minimap button and Interface Options panel |
 | `ARC.lua` | Event dispatch, update loop and slash commands |
 | `ARC.toc` | Metadata, saved variables and module load order |

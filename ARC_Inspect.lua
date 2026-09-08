@@ -63,14 +63,17 @@ local function ScanRequest(request)
     end
     local e = request.entry
     if e.specSource ~= "comm" and GetInspectSpecialization then
-        local specID = GetInspectSpecialization(request.unit)
-        if specID and specID > 0 and GetSpecializationInfoByID then
-            local id, name, _, icon, _, role = GetSpecializationInfoByID(specID)
-            if id then
+        local resolvedSpec = false
+        local specOK, specID = pcall(GetInspectSpecialization, request.unit)
+        if specOK and tonumber(specID) and specID > 0 and GetSpecializationInfoByID then
+            local infoOK, id, name, _, icon, _, role = pcall(GetSpecializationInfoByID, specID)
+            if infoOK and id then
                 e.specID, e.specName, e.specIcon, e.specSource = id, name, icon, "inspect"
                 e.role = role
+                resolvedSpec = true
             end
         end
+        if not resolvedSpec then e.specID, e.specName, e.specIcon, e.specSource = nil, nil, nil, nil end
     end
     local level = ARC:AnalyzeUnitGear(request.unit, e)
     if ARC.ScanTalents then ARC:ScanTalents(request.unit, e, true) end

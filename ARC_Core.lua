@@ -12,8 +12,8 @@ WHAT THIS ADDON DOES
   - Refreshes fast-changing status every second. Aura events update affected
     players immediately and a five-second full pass protects against missing
     private-server events.
-  - Can record opt-in raid sessions: attendance, pulls, ready snapshots, AFK
-    flags, first deaths and estimated inactivity during trash combat.
+  - Can automatically record raid-instance sessions: attendance, pulls,
+    categorized deaths and estimated inactivity during trash combat.
 
 HOW IT GETS ITS DATA (please read - this explains the limits of the WoW API)
   - Ready status, role, and every buff (flask/food/raid buffs) are read
@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.6.2"
+ARC.VERSION       = "1.7.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
@@ -99,6 +99,7 @@ local function ARC_InitDB()
     if d.locked == nil then d.locked = false end
     if d.autoHide == nil then d.autoHide = true end -- hide automatically on pull (PLAYER_REGEN_DISABLED)
     if d.manualMode == nil then d.manualMode = false end
+    if d.autoSessions == nil then d.autoSessions = true end
     if d.scale == nil then d.scale = 1.0 end
     if type(d.minItemLevel) ~= "number" or d.minItemLevel < 400 or d.minItemLevel > 600 or d.minItemLevel ~= math.floor(d.minItemLevel) then d.minItemLevel = 450 end
     if type(d.minimap) ~= "table" then d.minimap = {} end
@@ -300,11 +301,13 @@ end
 local function GetSelfSpec()
     local specIndex = GetSpecialization and GetSpecialization()
     if not specIndex or specIndex < 1 then return nil, nil, nil end
-    local id, name, _, icon, _, role = GetSpecializationInfo(specIndex)
+    if not GetSpecializationInfo then return nil, nil, nil end
+    local ok, id, name, _, icon, _, role = pcall(GetSpecializationInfo, specIndex)
+    if not ok then return nil, nil, nil end
     return id, name, icon, role
 end
 
-local function ScanUnitBuffs(unit)
+local function ScanUnitBuffsUnsafe(unit)
     local out = {
         auras = {}, auraNames = {},
         flask = false, flaskName = nil, flaskIcon = nil, flaskExpiresAt = nil,
@@ -343,6 +346,12 @@ local function ScanUnitBuffs(unit)
         end
     end
     return out
+end
+
+local function ScanUnitBuffs(unit)
+    if not UnitBuff then return nil end
+    local ok, result = pcall(ScanUnitBuffsUnsafe, unit)
+    return ok and result or nil
 end
 
 --=============================================================================
@@ -419,19 +428,27 @@ local function RefreshUnitPublicData(unit)
 
     if e.auraDataAvailable then
         local buffs = ScanUnitBuffs(unit)
-        e.buffs = buffs
-        e.flask, e.flaskName, e.flaskIcon, e.flaskExpiresAt =
-            buffs.flask, buffs.flaskName, buffs.flaskIcon, buffs.flaskExpiresAt
-        e.food, e.foodName, e.foodIcon, e.foodExpiresAt =
-            buffs.food, buffs.foodName, buffs.foodIcon, buffs.foodExpiresAt
-        e.sta, e.stat, e.crit, e.mast = buffs.sta, buffs.stat, buffs.crit, buffs.mast
-        e.staName, e.statName, e.critName, e.mastName =
-            buffs.staName, buffs.statName, buffs.critName, buffs.mastName
-        e.staIcon, e.statIcon, e.critIcon, e.mastIcon =
-            buffs.staIcon, buffs.statIcon, buffs.critIcon, buffs.mastIcon
-        e.staSource, e.statSource, e.critSource, e.mastSource =
-            buffs.staSource, buffs.statSource, buffs.critSource, buffs.mastSource
-        e.lastAuraScan = GetTime()
+        if buffs then
+            e.auraScanFailed = nil
+            e.buffs = buffs
+            e.flask, e.flaskName, e.flaskIcon, e.flaskExpiresAt =
+                buffs.flask, buffs.flaskName, buffs.flaskIcon, buffs.flaskExpiresAt
+            e.food, e.foodName, e.foodIcon, e.foodExpiresAt =
+                buffs.food, buffs.foodName, buffs.foodIcon, buffs.foodExpiresAt
+            e.sta, e.stat, e.crit, e.mast = buffs.sta, buffs.stat, buffs.crit, buffs.mast
+            e.staName, e.statName, e.critName, e.mastName =
+                buffs.staName, buffs.statName, buffs.critName, buffs.mastName
+            e.staIcon, e.statIcon, e.critIcon, e.mastIcon =
+                buffs.staIcon, buffs.statIcon, buffs.critIcon, buffs.mastIcon
+            e.staSource, e.statSource, e.critSource, e.mastSource =
+                buffs.staSource, buffs.statSource, buffs.critSource, buffs.mastSource
+            e.lastAuraScan = GetTime()
+        else
+            e.auraScanFailed, e.auraDataAvailable, e.buffs = true, false, nil
+            e.flask, e.food, e.sta, e.stat, e.crit, e.mast = nil, nil, nil, nil, nil, nil
+            e.flaskName, e.foodName, e.staName, e.statName, e.critName, e.mastName = nil, nil, nil, nil, nil, nil
+            e.flaskIcon, e.foodIcon, e.staIcon, e.statIcon, e.critIcon, e.mastIcon = nil, nil, nil, nil, nil, nil
+        end
     else
         e.buffs = nil
     end
@@ -512,7 +529,7 @@ function ARC:RefreshRosterStatus()
                 e.dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) or false
                 e.afk = UnitIsAFK and UnitIsAFK(unit) or false
                 local visible = (not UnitIsVisible) or UnitIsVisible(unit)
-                e.auraDataAvailable = e.online and visible
+                e.auraDataAvailable = e.online and visible and not e.auraScanFailed
                 if UnitIsUnit(unit, "player") then
                     e.inspectable = true
                 elseif CanInspect then
@@ -639,8 +656,8 @@ local function HandleCommMessage(sender, msg)
     e.lastComm = GetTime()
     specID = tonumber(specID)
     if specID and specID > 0 and GetSpecializationInfoByID then
-        local id, sname, _, icon, _, role = GetSpecializationInfoByID(specID)
-        if id then
+        local ok, id, sname, _, icon, _, role = pcall(GetSpecializationInfoByID, specID)
+        if ok and id then
             if e.specID ~= id then e.talents, e.lastGearScan, e.sacrifice = nil, nil, nil end
             e.specID, e.specName, e.specIcon, e.specSource = id, sname, icon, "comm"
         end
@@ -733,7 +750,12 @@ function ARC:ScanTalents(unit, entry, inspectReady)
     local sacrifice = "?"
     -- A remote all-empty static talent catalog is not proof of an empty build.
     -- Require our GUID-matched INSPECT_READY and a loaded inspected spec first.
-    local ready = GetTalentInfo and (not inspect or (inspectReady and GetInspectSpecialization and (GetInspectSpecialization(unit) or 0) > 0))
+    local inspectSpecReady = not inspect
+    if inspect and inspectReady and GetInspectSpecialization then
+        local ok, inspectedSpec = pcall(GetInspectSpecialization, unit)
+        inspectSpecReady = ok and tonumber(inspectedSpec) and inspectedSpec > 0 or false
+    end
+    local ready = GetTalentInfo and inspectSpecReady
     for tier = 1, 6 do
         local mark = "?"
         if level and level > 0 and levels and level < levels[tier] then

@@ -70,7 +70,7 @@ Do not label the version verified on the server until the live checklist passes.
 
 ## Historical 1.5.0 local preflight — 2026-09-02
 
-- 106 mocked ARC regression tests passed, including item tooltips and rename compatibility.
+- 125 mocked ARC regression tests passed, including private-server API failures, gear policy, local self-checks, Character Info integration, session tables, automatic lifecycle, retention and compatibility paths.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.
 - All seven addon Lua modules and the test harness parsed as Lua 5.1.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.

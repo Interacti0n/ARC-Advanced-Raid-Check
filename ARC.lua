@@ -74,15 +74,21 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             ARC:CreateMinimapButton()
             ARC:CreateOptionsPanel()
             ARC:InitInspectHooks()
-            if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
+            if HasPlayerCheck(true) then
+                ARC:AttachInspectCheckButton()
+                if ARC.AttachCharacterCheckButton then ARC:AttachCharacterCheckButton() end
+            end
             if ARC.InitPlayerCheckMenu then ARC:InitPlayerCheckMenu() end
         elseif addon == "Blizzard_InspectUI" then
             if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
+        elseif addon == "Blizzard_CharacterUI" then
+            if HasPlayerCheck(true) and ARC.AttachCharacterCheckButton then ARC:AttachCharacterCheckButton() end
         elseif addon == "ElvUI" then
             -- Covers the case where ARC's frame already exists and ElvUI
             -- only finishes loading afterward.
             ARC:TrySkinElvUI()
             if ARC.TrySkinSessionUI then ARC:TrySkinSessionUI() end
+            if ARC.TrySkinPlayerCheckUI then ARC:TrySkinPlayerCheckUI() end
         end
 
     elseif event == "PLAYER_ENTERING_WORLD" then
@@ -90,7 +96,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Second chance at ElvUI skinning: some ElvUI forks finish their
         -- own module setup slightly after ADDON_LOADED fires for them.
         ARC:TrySkinElvUI()
-        if HasPlayerCheck(true) then ARC:AttachInspectCheckButton() end
+        if HasPlayerCheck(true) then
+            ARC:AttachInspectCheckButton()
+            if ARC.AttachCharacterCheckButton then ARC:AttachCharacterCheckButton() end
+        end
         if ARC.InitPlayerCheckMenu then ARC:InitPlayerCheckMenu() end
 
     elseif event == "READY_CHECK" then
@@ -160,11 +169,9 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
 
     elseif event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ALIVE" or event == "PLAYER_REGEN_ENABLED" then
         ARC.selfDirty = true
-        if event == "PLAYER_REGEN_ENABLED" and ARC.EndTrashCombat then ARC:EndTrashCombat() end
         if event == "PLAYER_EQUIPMENT_CHANGED" then ARC.forceSelfGearScan = true end
 
     elseif event == "PLAYER_REGEN_DISABLED" then
-        if ARC.StartTrashCombat then ARC:StartTrashCombat() end
         -- Entering combat = the pull. Hide immediately rather than waiting
         -- on a timer after the ready check finished.
         if ARC_DB.autoHide and ARC:IsVisible() then
@@ -290,8 +297,12 @@ SlashCmdList["ARC"] = function(rawMsg)
         print("|cff33ff99ARC:|r minimap button is now " .. (ARC_DB.minimap.hide and "OFF" or "ON") .. ".")
     elseif msg == "options" or msg == "config" then
         ARC:OpenOptions()
-    elseif msg == "check" then
-        if HasPlayerCheck(true, true) then ARC:ShowPlayerCheck("target") end
+    elseif msg == "check" or msg == "check self" then
+        if HasPlayerCheck(true, true) then
+            local unit = msg == "check self" and "player" or
+                (UnitExists("target") and UnitIsPlayer and UnitIsPlayer("target") and "target" or "player")
+            ARC:ShowPlayerCheck(unit)
+        end
     elseif msg == "session" or msg == "report" then
         if ARC.ShowSessionReport then ARC:ShowSessionReport() end
     elseif msg == "session start" then
@@ -308,8 +319,8 @@ SlashCmdList["ARC"] = function(rawMsg)
         print("  /arc manual [on|off] - toggle or set manual-only window opening")
         print("  /arc minimap    - toggle the minimap button")
         print("  /arc options    - open the options panel")
-        print("  /arc check      - player overview and PvE gear problems (no group required)")
-        print("  /arc session [start|end] - raid attendance, pulls, AFK and trash inactivity report")
+        print("  /arc check [self] - target player overview, or your own local PvE check")
+        print("  /arc session [start|end] - raid attendance, pulls, deaths and estimated trash inactivity")
         print("  Right-click a player portrait or ARC row for ARC Check.")
         print("  /arc raid - expected raid mode/size and loot method; also click the setup banner.")
         print("  Talents = empty available talents; Self = missing class buffs. ? means unverified.")

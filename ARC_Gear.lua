@@ -21,6 +21,22 @@ local SLOT_NAMES = {
     [13] = "Trinket 1", [14] = "Trinket 2", [15] = "Back",
     [16] = "Main hand", [17] = "Off hand",
 }
+local ARMOR_SLOTS = { [1]=true, [3]=true, [5]=true, [6]=true, [7]=true, [8]=true, [9]=true, [10]=true }
+local CLASS_ARMOR = {
+    MAGE="CLOTH", PRIEST="CLOTH", WARLOCK="CLOTH",
+    DRUID="LEATHER", MONK="LEATHER", ROGUE="LEATHER",
+    HUNTER="MAIL", SHAMAN="MAIL",
+    DEATHKNIGHT="PLATE", PALADIN="PLATE", WARRIOR="PLATE",
+}
+local ARMOR_TYPE_BY_NAME = {}
+local function AddArmorType(kind, localized, english)
+    if type(localized) == "string" and localized ~= "" then ARMOR_TYPE_BY_NAME[localized] = kind end
+    ARMOR_TYPE_BY_NAME[english] = kind
+end
+AddArmorType("CLOTH", ITEM_SUBCLASS_ARMOR_CLOTH, "Cloth")
+AddArmorType("LEATHER", ITEM_SUBCLASS_ARMOR_LEATHER, "Leather")
+AddArmorType("MAIL", ITEM_SUBCLASS_ARMOR_MAIL, "Mail")
+AddArmorType("PLATE", ITEM_SUBCLASS_ARMOR_PLATE, "Plate")
 
 -- MoP specialization IDs and their expected primary attribute.
 local SPEC_PRIMARY = {
@@ -553,6 +569,11 @@ local function ParseItemFields(link)
     return { strsplit(":", itemString) }
 end
 
+local function SafeAPI(fn, ...)
+    if type(fn) ~= "function" then return false end
+    return pcall(fn, ...)
+end
+
 local function GetEnchantID(link)
     local fields = ParseItemFields(link)
     return fields and tonumber(fields[3]) or 0 -- item:ITEM_ID:ENCHANT_ID
@@ -565,20 +586,21 @@ local function GetUpgradeDelta(link)
 end
 
 local function ScanEffectiveItemLevel(unit, slot, link)
-    GearScanTip:SetOwner(UIParent, "ANCHOR_NONE")
-    GearScanTip:ClearLines()
-    GearScanTip:SetInventoryItem(unit, slot)
-    for line = 2, GearScanTip:NumLines() do
-        local fs = _G["ARCGearScanTooltipTextLeft" .. line]
-        local text = fs and fs:GetText()
-        local level = text and tonumber(text:match(ITEM_LEVEL_PATTERN))
-        if level then
-            GearScanTip:Hide()
-            return level
+    local tooltipOK, tooltipLevel = pcall(function()
+        GearScanTip:SetOwner(UIParent, "ANCHOR_NONE")
+        GearScanTip:ClearLines()
+        GearScanTip:SetInventoryItem(unit, slot)
+        for line = 2, GearScanTip:NumLines() do
+            local fs = _G["ARCGearScanTooltipTextLeft" .. line]
+            local text = fs and fs:GetText()
+            local level = text and tonumber(text:match(ITEM_LEVEL_PATTERN))
+            if level then return level end
         end
-    end
-    GearScanTip:Hide()
-    local baseLevel = link and select(4, GetItemInfo(link))
+    end)
+    pcall(GearScanTip.Hide, GearScanTip)
+    if tooltipOK and tooltipLevel then return tooltipLevel end
+    local ok, _, _, _, baseLevel = SafeAPI(GetItemInfo, link)
+    if not ok then baseLevel = nil end
     return baseLevel and (baseLevel + GetUpgradeDelta(link)) or nil
 end
 
@@ -619,7 +641,8 @@ local function FilledGemCount(link, maximum)
     if not GetItemGem then return nil end
     local filled = 0
     for gemIndex = 1, math.max(maximum or 0, 4) do
-        local gemName, gemLink = GetItemGem(link, gemIndex)
+        local ok, gemName, gemLink = SafeAPI(GetItemGem, link, gemIndex)
+        if not ok then return nil end
         if gemName or gemLink then filled = filled + 1 end
     end
     return filled
@@ -648,11 +671,19 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
     for index = 1, 4 do
         if (tonumber(fields[index + 3]) or 0) > 0 then
             local gemName, gemLink
-            if GetItemGem then gemName, gemLink = GetItemGem(link, index) end
+            if GetItemGem then
+                local gemOK
+                gemOK, gemName, gemLink = SafeAPI(GetItemGem, link, index)
+                if not gemOK then gemName, gemLink = nil, nil end
+            end
             local gemID = gemLink and tonumber(gemLink:match("item:(%d+)"))
             local rule = gemID and GEM_RULE_DATA[gemID]
             local infoName, _, quality, level
-            if gemLink then infoName, _, quality, level = GetItemInfo(gemLink) end
+            if gemLink then
+                local infoOK
+                infoOK, infoName, _, quality, level = SafeAPI(GetItemInfo, gemLink)
+                if not infoOK then infoName, quality, level = nil, nil, nil end
+            end
             gemName = gemName or infoName or (rule and rule.name) or ("gem #" .. index)
             local reasons = {}
             if rule then
@@ -674,7 +705,8 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
             elseif gemID and infoName and quality and level then
                 if quality < 3 then reasons[#reasons + 1] = "below rare (blue) quality" end
                 if level < 90 then reasons[#reasons + 1] = "older than the MoP level-90 gem tier" end
-                local live = GetItemStats and GetItemStats(gemLink)
+                local statsOK, live = SafeAPI(GetItemStats, gemLink)
+                if not statsOK then live = nil end
                 if live then
                     local stats = {}
                     for stat, keys in pairs(STAT_KEYS) do stats[stat] = StatAmount(live, keys) end
@@ -757,28 +789,39 @@ function ARC:AnalyzeUnitGear(unit, entry)
     local result = {
         scanned = true, scannedAt = GetTime(), totalSockets = 0, missingGems = 0,
         missingGemSlots = {}, missingEnchants = {}, wrongPrimary = {},
-        lowItems = {}, missingItems = {}, itemLevels = {},
+        lowItems = {}, missingItems = {}, wrongArmor = {}, itemLevels = {},
         slots = {}, pendingSlots = {}, badGems = {}, badEnchants = {}, unverified = {},
         minItemLevel = (ARC_DB and tonumber(ARC_DB.minItemLevel)) or 450,
     }
     local expectedPrimary = SPEC_PRIMARY[entry.specID]
     local minLevel = (ARC_DB and tonumber(ARC_DB.minItemLevel)) or 450
     local totalLevel, loadedWeight = 0, 0
-    local offLink = GetInventoryItemLink(unit, 17)
+    local offLinkOK, offLink = SafeAPI(GetInventoryItemLink, unit, 17)
+    local mainEquipLoc, offDetail
     local itemCount = 0
 
     for _, slot in ipairs(EQUIPPED_SLOTS) do
-        local link = GetInventoryItemLink(unit, slot)
+        local linkOK, link = SafeAPI(GetInventoryItemLink, unit, slot)
         local detail = { slot = slot, label = SLOT_NAMES[slot], link = link, issues = {}, warnings = {} }
+        if slot == 17 then offDetail = detail end
         result.slots[#result.slots + 1] = detail
-        if link then
+        if not linkOK then
+            detail.pending = true
+            ValidationWarning(result, detail, "equipment API failed", true)
+        elseif link then
             itemCount = itemCount + 1
-            local itemName, _, quality, _, _, _, _, _, equipLoc, itemIcon = GetItemInfo(link)
+            local infoOK, itemName, _, quality, _, _, _, itemSubType, _, equipLoc, itemIcon = SafeAPI(GetItemInfo, link)
+            if not infoOK then itemName, quality, itemSubType, equipLoc, itemIcon = nil, nil, nil, nil, nil end
+            if slot == 16 then mainEquipLoc = equipLoc end
             local effectiveLevel = ScanEffectiveItemLevel(unit, slot, link)
             result.itemLevels[slot] = effectiveLevel
             detail.name, detail.ilvl = itemName, effectiveLevel
-            detail.icon = itemIcon or (GetInventoryItemTexture and GetInventoryItemTexture(unit, slot))
+            local textureOK, inventoryTexture = SafeAPI(GetInventoryItemTexture, unit, slot)
+            detail.icon = itemIcon or (textureOK and inventoryTexture or nil)
             detail.pending = not itemName or not effectiveLevel or not equipLoc
+            if not infoOK then
+                ValidationWarning(result, detail, "item information API failed", true)
+            end
 
             local weight = FIXED_AVERAGE_SLOTS[slot] and 1 or 0
             if slot == 16 then
@@ -807,8 +850,12 @@ function ARC:AnalyzeUnitGear(unit, entry)
             local fields = ParseItemFields(link)
             local itemID = fields and tonumber(fields[2])
             local baseItem = itemID and ("item:" .. itemID) or link
-            local stats = GetItemStats and GetItemStats(baseItem)
-            if not stats or not GetItemInfo(baseItem) then detail.pending = true end
+            local statsOK, stats = SafeAPI(GetItemStats, baseItem)
+            local baseInfoOK, baseName = SafeAPI(GetItemInfo, baseItem)
+            if not statsOK or not baseInfoOK or not stats or not baseName then detail.pending = true end
+            if not statsOK or not baseInfoOK then
+                ValidationWarning(result, detail, "item stat API failed", true)
+            end
             stats = stats or {}
             local sockets = SocketCount(stats)
             local filled = FilledGemCount(link, sockets)
@@ -833,6 +880,20 @@ function ARC:AnalyzeUnitGear(unit, entry)
             CheckGemPolicy(result, detail, link, entry, expectedPrimary)
             CheckEnchantPolicy(result, detail, link, entry, expectedPrimary, equipLoc, quality)
 
+            local expectedArmor = CLASS_ARMOR[entry.class]
+            local actualArmor = ARMOR_SLOTS[slot] and ARMOR_TYPE_BY_NAME[itemSubType]
+            local unitLevel = tonumber(entry.level)
+            if not unitLevel then
+                local levelOK, level = SafeAPI(UnitLevel, unit)
+                unitLevel = levelOK and tonumber(level) or 0
+            end
+            if expectedArmor and actualArmor and actualArmor ~= expectedArmor and
+                unitLevel >= 50 then
+                local text = "Wrong armor type (" .. actualArmor:lower() .. "; expected " .. expectedArmor:lower() .. ")"
+                detail.issues[#detail.issues + 1] = text
+                result.wrongArmor[#result.wrongArmor + 1] = detail.label .. ": " .. (itemName or "item")
+            end
+
             if expectedPrimary and slot ~= 13 and slot ~= 14 then
                 local expected = StatAmount(stats, STAT_KEYS[expectedPrimary])
                 local other = 0
@@ -847,8 +908,10 @@ function ARC:AnalyzeUnitGear(unit, entry)
         else
             -- A texture without an item link means equipment is still loading,
             -- not an empty slot. Only evaluate empties after a valid inspect.
-            detail.pending = GetInventoryItemTexture and GetInventoryItemTexture(unit, slot) ~= nil
+            local textureOK, texture = SafeAPI(GetInventoryItemTexture, unit, slot)
+            detail.pending = not textureOK or texture ~= nil
             detail.empty = not detail.pending
+            if not textureOK then ValidationWarning(result, detail, "equipment texture API failed", true) end
             if detail.empty and (FIXED_AVERAGE_SLOTS[slot] or slot == 16) then
                 detail.issues[1] = "Empty required slot"
                 result.missingItems[#result.missingItems + 1] = SLOT_NAMES[slot] or tostring(slot)
@@ -857,13 +920,19 @@ function ARC:AnalyzeUnitGear(unit, entry)
         if detail.pending then result.pendingSlots[#result.pendingSlots + 1] = detail.label end
     end
 
+    if offLinkOK and (mainEquipLoc == "INVTYPE_WEAPON" or mainEquipLoc == "INVTYPE_WEAPONMAINHAND") and
+        not offLink and offDetail and offDetail.empty and not offDetail.pending then
+        offDetail.issues[#offDetail.issues + 1] = "Missing off-hand for one-handed main weapon"
+        result.missingItems[#result.missingItems + 1] = SLOT_NAMES[17]
+    end
+
     result.scanned = #result.pendingSlots == 0 and itemCount > 0
     result.averageItemLevel = result.scanned and loadedWeight > 0 and Round(totalLevel / 16) or nil
     result.expectedPrimary = expectedPrimary
     if not expectedPrimary then result.unverified[#result.unverified + 1] = "Spec unavailable - primary-stat suitability not evaluated" end
     result.auditComplete = result.scanned and #result.unverified == 0
     result.issueCount = result.missingGems + #result.missingEnchants +
-        #result.wrongPrimary + #result.lowItems + #result.missingItems + #result.badGems + #result.badEnchants
+        #result.wrongPrimary + #result.wrongArmor + #result.lowItems + #result.missingItems + #result.badGems + #result.badEnchants
     entry.gear = result
     if result.scanned and not result.validationPending then entry.lastGearScan = result.scannedAt end
     return result.averageItemLevel

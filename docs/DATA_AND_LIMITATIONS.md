@@ -38,6 +38,11 @@ displayed with `~` because remote inspect data can be unavailable or stale.
 Uncached equipment and gem data are retried after `INSPECT_READY`; incomplete
 data is not marked as passed.
 
+Remote aura, specialization, equipment, item-stat, gem and hidden-tooltip calls
+are guarded because private-server cores can throw instead of returning normal
+empty values. A failed call invalidates that data area and becomes
+**Unverified/Pending**; it never proves a missing buff, empty slot or valid gear.
+
 ## Addon-channel reports
 
 ARC reports only information the sender can reliably read about itself. The
@@ -56,7 +61,8 @@ talent information older than 65 seconds becomes unverified until refreshed.
 
 ## Gear-policy boundaries
 
-ARC checks required equipped slots, minimum item level, obvious STR/AGI/INT
+ARC checks required equipped slots, class armor specialization, missing
+off-hands for one-handed main weapons, minimum item level, obvious STR/AGI/INT
 mismatches, sockets, gem tier/quality, known PvP stats and an explicit top-tier
 MoP enchant catalog. It does not attempt to optimize secondary-stat weights or
 caps, socket bonuses, meta activation, trinket procs, profession ownership or
@@ -89,5 +95,5 @@ Remote durability is exact only when self-reported by that player's ARC. ARC
 does not estimate it from deaths or repair costs.
 
 Session trash inactivity is intentionally approximate. It measures the absence
-of recorded combat participation after the configured ten-second threshold; it
+of recorded combat participation after the configured five-second threshold; it
 is not proof of real-world AFK behavior. See [Session reports](SESSION_REPORT.md).

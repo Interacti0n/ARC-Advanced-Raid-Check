@@ -1,10 +1,35 @@
+v1.7.0 CHANGES
+  - Rebuilt Session Report as sortable Players, expandable Bosses and compact
+    Export views with a persistent raid summary.
+  - Added automatic raid-instance sessions with wipe/reload continuity, a
+    30-second exit grace and a manual override in Options.
+  - Improved trash tracking: five-second inactivity, combat-log pack detection,
+    prompt enemy-death cleanup and a six-second stuck-combat fallback.
+  - Pet combat can keep a pack visible but never credits its owner as active.
+  - Added offline time, eligible-trash percentages, longest idle streak and
+    boss/trash/other/first-death totals; removed stored AFK and ready details.
+  - Retains completed sessions for fourteen days, then removes them permanently.
+  - Added a visible session-history position and confirmed deletion of saved
+    reports; corrected the session help text to describe trash inactivity.
+  - ARC Check now supports your own character through local APIs without using
+    Blizzard's inspect request.
+  - Removed consumable, repair and Healthstone readiness from standalone ARC
+    Check so the report stays focused on gear and character requirements.
+  - Added class armor-type validation and a confirmed missing off-hand check for
+    one-handed main weapons.
+  - Added an ElvUI-compatible ARC Check button to the Character Info header.
+  - Hardened remote aura, specialization, item, gem and tooltip reads against
+    private-server API errors; failed data now remains Unverified/Pending.
+
 v1.6.2 CHANGES
-  - Fixed Food detection so Ancestral Vigor and other unrelated auras are no
-    longer treated as Well Fed.
-  - Replaced the Food catalog with verified MoP 250/275/300-stat and patch 5.4
-    food aura IDs while retaining the private-server Well Fed fallback.
+  - Food detection no longer mistakes Ancestral Vigor or unrelated auras for
+    Well Fed.
+  - The Food catalog now uses verified MoP 250/275/300-stat and patch 5.4 aura
+    IDs.
+  - The private-server Well Fed name fallback remains supported.
 
 v1.6.1 CHANGES
+  - Internal hotfix milestone included in the public v1.6.2 release.
   - Fixed the Session Report crash on the MoP 5.4.8 client.
   - Prevented unavailable remote Self and Healthstone data from creating false
     raid warnings; confirmed failures still require a current ARC report.
@@ -12,53 +37,49 @@ v1.6.1 CHANGES
   - Added Arcane/Dalaran Brilliance and hunter pet Howl/Growl variants to Crit.
 
 v1.6.0 CHANGES
-  - Added optional raid-session reports with attendance, AFK time, ready-check
-    snapshots, boss pulls/kills, first deaths and copyable results.
-  - Added estimated trash inactivity. After 10 seconds without combat activity,
-    the full inactive interval is counted until the player participates again.
-  - Added the READY TO PULL / NOT READY / CHECK INCOMPLETE raid verdict.
-    Offline, dead and AFK players are clearly shown as pull blockers.
-  - Added a scrolling, screen-aware 25-player roster and visible inspect progress.
-  - Added five-minute flask/food warnings and one concise Remind whisper
-    containing every confirmed personal issue.
-  - Added ARC version comparison; outdated clients now show a red Old marker.
-  - Reduced expensive roster rescans while keeping important state and aura
-    changes responsive.
+  - Added raid-session reports with attendance, pulls, first deaths and estimated
+    trash inactivity.
+  - Added the READY TO PULL / NOT READY / CHECK INCOMPLETE raid verdict with
+    clear offline, dead and AFK blockers.
+  - Added a scrolling 25-player roster, visible inspect progress and more
+    efficient refresh behavior.
+  - Added expiring Flask/Food warnings, concise player reminders and ARC version
+    comparison.
+  - Added session persistence, copyable reports and ElvUI styling for the new
+    controls.
 
 v1.5.0 CHANGES
-  - Renamed the addon to Advanced Raid Check. The `ARC` folder, commands,
-    settings and communication prefix remain compatible.
+  - Renamed the addon to Advanced Raid Check while preserving ARC compatibility
+    identifiers and saved settings.
   - Added standalone ARC Check from inspect, player menus, roster rows and
-    `/arc check`. Reports show player details and only problems/unverified data.
-  - Added item icons with native tooltips and upgrade-aware snapshot refreshes.
-  - Expanded PvE gear validation for MoP gems, enchants, primary stats, PvP
-    effects, missing slots and configurable minimum item level.
-  - Added empty-talent-tier and class self-buff checks.
-  - Added tank stance/form, Righteous Fury, required pet, Warlock Sacrifice,
-    Hunter Growl autocast, Shaman weapon imbue and Healthstone checks.
-  - Added the raid setup banner for expected difficulty, size and loot method.
-  - Added manual-only window opening, Ready/Not Ready buttons and an exact
-    numeric minimum-ilvl setting.
-  - Added backward-compatible ARC reports for private data and safer handling
-    of stale inspect results, changed targets and cached old TOC file lists.
+    /arc check.
+  - Expanded MoP PvE gear validation for item level, upgrades, gems, enchants,
+    primary stats and PvP effects.
+  - Added talent, self-buff, tank stance, pet, Growl, Sacrifice, weapon-imbue and
+    Healthstone checks.
+  - Added raid setup validation, manual window mode, ready-response buttons and
+    exact minimum item-level input.
 
 v1.4.0 CHANGES
-  - Added optional ElvUI 2.76 styling for frames, fonts, buttons, rows and icons.
-  - Added `(off)` and `(dead)` labels beside player names.
+  - Added automatic ElvUI 2.76 styling for ARC frames, controls, rows and icons.
+  - Added (off) and (dead) status labels beside player names.
 
 v1.3.3 CHANGES
+  - Internal hotfix milestone included in the public v1.4.0 release.
   - Fixed the flask/food tooltip error introduced by the module split.
   - Moved fallback icons into the UI module so missing buffs render safely.
 
 v1.3.2 CHANGES
-  - Added distinct row colors for offline, dead, out-of-range and waiting players.
-  - Stopped unavailable aura data from being reported as missing flask or food.
+  - Added clear row colors for offline, dead, out-of-range and waiting players.
+  - Prevented unavailable aura data from being reported as missing Flask or Food.
 
 v1.3.1 CHANGES
+  - Internal development milestone included in the public v1.3.2 release.
   - Added ARC user/version information to the roster and summary.
   - Raid-buff columns now use each player's actual active aura icon.
 
 v1.3.0 CHANGES
+  - Internal development milestone included in the public v1.3.2 release.
   - Fixed cropped/offset tank, healer and damage role icons.
   - Added upgrade-aware equipped item level with correct MoP slot weighting.
   - Added gear checks for sockets, enchants, empty/low-level items and obvious
@@ -66,18 +87,21 @@ v1.3.0 CHANGES
   - Added configurable minimum item level and self-reported remote durability.
 
 v1.2.1 CHANGES
+  - Internal development milestone included in the public v1.3.2 release.
   - Split ARC into Core, Gear/Inspect, UI, Options and Events/Commands modules.
   - Fixed raid-buff source tooltips and added locale-neutral spell-ID matching.
   - Added cross-realm-safe roster keys and authenticated addon-message senders.
   - Corrected remote item-level weighting and synchronized addon versions.
 
 v1.2.0 CHANGES
+  - Internal development milestone included in the public v1.3.2 release.
   - Added the minimap button and Interface Options panel.
   - Added raid-buff provider tooltips and player-row actions.
   - Improved ElvUI skinning so one unsupported widget cannot disable the
     otherwise working skin.
 
 v1.1.0 CHANGES
+  - Internal development milestone included in the public v1.3.2 release.
   - Unified header and row layouts and restored full column names.
   - Added exact flask/food details on hover.
   - Added the live ready-check countdown and persistent final results.
