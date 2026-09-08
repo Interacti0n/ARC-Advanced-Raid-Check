@@ -17,6 +17,9 @@ v1.8.0 CHANGES
     calls and duplicate suppression while retaining the 15-second heartbeat.
   - Added a player-grouped Loot tab to raid sessions with chronological boss
     rewards, bonus items, empty bonus rolls and epic-only trash drops.
+  - Kept post-kill loot under the last defeated boss until the next encounter;
+    once trash starts, only epic drops are retained to avoid mislabeling delayed
+    boss or master-loot awards as trash.
   - Preserved exact item links for hover tooltips and Shift-click, with best-effort
     Heroic, Raid Finder, Flexible, Warforged and Thunderforged labels.
   - Added sender-bound L1 bonus-roll sync, duplicate suppression, a 500-entry
