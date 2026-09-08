@@ -143,7 +143,7 @@ function GetInventoryItemLink(unit, slot)
     if noItems or (slot == 17 and not item.equipped) or (missing and slot == 11) or (linkPending and slot == 1) then return nil end
     local enchant = item.enchant
     if enchant == nil then enchant = defaultEnchants[slot] or 0 end
-    local gems = item.gems or (slot == 1 and { 76694 } or {})
+    local gems = item.gems or (slot == 1 and { 76694 } or slot == 6 and { 76694 } or {})
     local fields = { "item", 1000 + slot, enchant }
     -- Deliberately use enchantment-like fields, not gem item IDs.
     for index = 1, 4 do fields[#fields + 1] = gems[index] and gems[index] > 0 and (4600 + index) or 0 end
@@ -174,7 +174,7 @@ end
 function GetItemGem(link, index)
     if gemCold then return nil end
     local slot = tonumber(link:match("item:(%d+)")) - 1000
-    local gems = (gearOverrides[slot] or {}).gems or (slot == 1 and { 76694 } or {})
+    local gems = (gearOverrides[slot] or {}).gems or (slot == 1 and { 76694 } or slot == 6 and { 76694 } or {})
     local id = gems[index]
     if id and id > 0 then
         local gem = gemOverrides[id] or ARC.GEAR_RULES.gems[id]
@@ -626,9 +626,14 @@ test("invalid input preserves the saved threshold and Escape cancels edits", fun
     assert(ARC:SetMinimumItemLevel("400")); assert(ARC:SetMinimumItemLevel("600"))
     assert(ARC:SetMinimumItemLevel("450"))
 end)
-local function policyScan(overrides, specID, class, role)
+local function policyScan(overrides, specID, class, role, professions)
     gearOverrides = overrides or {}
-    local entry = { specID = specID or 62, class = class or "MAGE", role = role or "DAMAGER" }
+    local primary = ARC.GEAR_RULES.specPrimary[specID or 62]
+    if gearOverrides[6] == nil then
+        gearOverrides[6] = { gems = { primary == "STR" and 76696 or primary == "AGI" and 76692 or 76694 } }
+    end
+    local entry = { specID = specID or 62, class = class or "MAGE", role = role or "DAMAGER",
+        professions = professions, professionsKnown = professions ~= nil, professionSource = "test" }
     ARC:AnalyzeUnitGear("target", entry)
     return entry.gear
 end
@@ -722,9 +727,39 @@ test("PvP meta effects and wrong legendary proc are rejected", function()
         assert(#gear.badGems == 1 and gear.badGems[1]:find("PvP bonus", 1, true), id)
     end
     local gear = policyScan({ [1] = { gems = { 95346 } } })
-    assert(gear.badGems[1]:find("different type of spec", 1, true))
+    assert(gear.badGems[1]:find("physical spec", 1, true))
     gear = policyScan({ [1] = { gems = { 95345 } } })
     assert(gear.badGems[1]:find("requires role HEALER", 1, true))
+end)
+test("top PvE metas follow spec and allow DPS alternatives for tanks and healers", function()
+    start()
+    for _, id in ipairs({ 76879, 76885, 95347 }) do
+        local gear = policyScan({ [1] = { gems = { id } } }, 62, "MAGE", "DAMAGER")
+        assert(#gear.badGems == 0, "INT caster meta rejected: " .. id)
+    end
+    for _, id in ipairs({ 76888, 95345, 76885, 95347 }) do
+        local gear = policyScan({ [1] = { gems = { id } } }, 257, "PRIEST", "HEALER")
+        assert(#gear.badGems == 0, "healer meta rejected: " .. id)
+    end
+    for _, id in ipairs({ 76895, 76896, 76897, 95344, 76886, 95346 }) do
+        local gear = policyScan({ [1] = { gems = { id } } }, 73, "WARRIOR", "TANK")
+        assert(#gear.badGems == 0, "tank meta rejected: " .. id)
+    end
+    local gear = policyScan({ [1] = { gems = { 76887 } } })
+    assert(#gear.badGems == 1 and gear.badGems[1]:find("not an approved", 1, true))
+    gear = policyScan({ [1] = { gems = { 76895 } } })
+    assert(#gear.badGems == 1 and gear.badGems[1]:find("role TANK", 1, true))
+end)
+test("raid belts require a filled buckle socket and audit its gem", function()
+    start()
+    local gear = policyScan({ [6] = { gems = {} } })
+    local waist = gear.slots[5]
+    assert(waist.label == "Waist" and gear.missingGems >= 1)
+    assert(table.concat(waist.issues, " "):find("Living Steel Belt Buckle", 1, true))
+    gear = policyScan({ [6] = { gems = { 76694 } } })
+    assert(not table.concat(gear.slots[5].issues, " "):find("Belt Buckle", 1, true))
+    gear = policyScan({ [6] = { gems = { 76685 } } })
+    assert(#gear.badGems == 1 and gear.badGems[1]:find("PvP bonus", 1, true))
 end)
 test("gems in extra sockets are audited even when base sockets are absent", function()
     start()
@@ -746,7 +781,7 @@ test("unavailable gem API yields an explicit unknown, not a pass", function()
     local gear = policyScan(cleanGear())
     GetItemGem = api
     assert(gear.scanned and not gear.validationPending and not gear.auditComplete)
-    assert(gear.issueCount == 0 and #gear.unverified == 2)
+    assert(gear.issueCount == 0 and #gear.unverified == 3)
 end)
 test("unknown custom gem or enchant cannot produce a green OK", function()
     local f = start()
@@ -786,12 +821,32 @@ test("PvP enchants fail, but PvE-equivalent cosmetic variants pass", function()
 end)
 test("profession top enchants and ring enchants are supported", function()
     start()
-    for _, pair in ipairs({ {3,4915}, {7,4895}, {9,4877}, {15,4892}, {11,4360}, {12,4360} }) do
+    for _, pair in ipairs({ {3,4915}, {7,4895}, {9,4877}, {10,4898}, {15,4892}, {11,4360}, {12,4360} }) do
         local gear = policyScan({ [pair[1]] = { enchant = pair[2] } })
         assert(#gear.badEnchants == 0 and #gear.unverified == 0, pair[2])
     end
     local gear = policyScan({ [11] = { enchant = 0 }, [12] = { enchant = 0 } })
     assert(#gear.missingEnchants == 1, "Only default shoulder is missing; rings are optional")
+end)
+test("confirmed professions require only reliably visible gear bonuses", function()
+    start()
+    local gear = policyScan({ [11] = { enchant = 0 }, [12] = { enchant = 0 } }, 62, "MAGE", "DAMAGER", { [333]=true })
+    assert(table.concat(gear.missingEnchants, " "):find("Ring 1", 1, true))
+    assert(table.concat(gear.missingEnchants, " "):find("Ring 2", 1, true))
+
+    gear = policyScan({}, 62, "MAGE", "DAMAGER", { [755]=true })
+    assert(#gear.professionIssues == 1 and gear.professionIssues[1]:find("0/2", 1, true))
+    gear = policyScan({ [1] = { gems = { 83150, 83150 } } }, 62, "MAGE", "DAMAGER", { [755]=true })
+    assert(#gear.professionIssues == 0 and #gear.badGems == 0)
+
+    gear = policyScan({ [9] = { gems = {} }, [10] = { gems = {} } }, 62, "MAGE", "DAMAGER", { [164]=true })
+    assert(table.concat(gear.slots[8].issues, " "):find("Blacksmithing", 1, true))
+    assert(table.concat(gear.slots[9].issues, " "):find("Blacksmithing", 1, true))
+
+    gear = policyScan({ [1] = { gems = { 83150 } } }, 62, "MAGE", "DAMAGER", {})
+    assert(#gear.badGems == 1 and gear.badGems[1]:find("requires Jewelcrafting", 1, true))
+    gear = policyScan({ [1] = { gems = { 83150 } } })
+    assert(#gear.badGems == 0, "Unknown remote professions must not create an ownership failure")
 end)
 test("runeforges stay valid for death knights, not for other classes", function()
     start()
@@ -1612,9 +1667,44 @@ test("P1 preparation extension is validated and older R1 peers retain compatibil
     units.party1, alice.class = nil, nil
 end)
 
+test("profession reports are compact, sender-bound and backwards compatible", function()
+    withGlobals({ GetProfessions = function() return 10, 20 end,
+        GetProfessionInfo = function(index)
+            return index == 10 and "Enchanting" or "Blacksmithing", "icon", 600, 600, 0, 0,
+                index == 10 and 333 or 164
+        end }, function()
+        local own, ownKnown, code = ARC:ReadSelfProfessions()
+        assert(ownKnown and own[164] and own[333] and code == "164,333")
+    end)
+    withGlobals({ GetProfessions = function() error("broken profession API") end,
+        GetProfessionInfo = function() end }, function()
+        local _, ownKnown, code = ARC:ReadSelfProfessions()
+        assert(not ownKnown and code == "?")
+    end)
+    local decoded, known = ARC:DecodeProfessions("164,333")
+    assert(known and decoded[164] and decoded[333])
+    assert(select(2, ARC:DecodeProfessions("-")))
+    for _, bad in ipairs({ "?", "164,164", "164,999", "164,333,755", "164;333" }) do
+        assert(not select(2, ARC:DecodeProfessions(bad)), bad)
+    end
+
+    units.party1 = alice
+    withGlobals({ IsInGroup = function() return true end, GetNumGroupMembers = function() return 2 end }, function()
+        ARC.Internal.HandleCommMessage("Alice-Realm",
+            "1.8.0^Forged-Realm^62^500^100^100^R1^111111^??^P1^?^?^?^?^-^?^F1^164,333")
+        local entry = assert(ARC.roster["Alice-Realm"])
+        assert(entry.professionsKnown and entry.professions[164] and entry.professions[333])
+        assert(entry.professionSource == "comm" and entry.professionAt == now)
+        ARC.Internal.HandleCommMessage("Alice-Realm",
+            "1.7.0^Alice-Realm^62^500^100^100^R1^111111^??")
+        assert(not entry.professionsKnown and entry.professions == nil)
+    end)
+    units.party1 = nil
+end)
+
 test("pet, bag and stance events mark self reports dirty without automatic game actions", function()
     menuStart(); ARC:Hide()
-    for _, event in ipairs({ "PET_BAR_UPDATE", "BAG_UPDATE", "UPDATE_SHAPESHIFT_FORM", "UNIT_PET" }) do
+    for _, event in ipairs({ "PET_BAR_UPDATE", "BAG_UPDATE", "UPDATE_SHAPESHIFT_FORM", "UNIT_PET", "SKILL_LINES_CHANGED" }) do
         ARC.selfDirty = false
         ARCEventFrame.scripts.OnEvent(ARCEventFrame, event, "player")
         assert(ARC.selfDirty and not ARC:IsVisible())
@@ -1665,7 +1755,8 @@ test("outgoing P1 reports round-trip real pet, Sacrifice, charge and form fields
             ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
             assert(message and #message <= 255)
             local fields = { strsplit("^", message) }
-            assert(#fields == 16 and fields[7] == "R1" and fields[10] == "P1" and fields[14] == "3")
+            assert(#fields == 18 and fields[7] == "R1" and fields[10] == "P1" and fields[14] == "3")
+            assert(fields[17] == "F1" and fields[18] == "?")
             local entry = assert(ARC.roster["Me-Realm"])
             entry.preparation, entry.sacrifice = nil, nil
             ARC.Internal.HandleCommMessage("Me-Realm", message)

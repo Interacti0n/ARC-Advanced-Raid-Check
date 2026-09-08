@@ -268,6 +268,18 @@ local GEM_RULE_DATA = {
     [98056] = { name = "Crystallized Horror", quality = 5, stats = { INT = 500 } },
 }
 
+local PROFESSION = {
+    BLACKSMITHING = 164, LEATHERWORKING = 165, ALCHEMY = 171,
+    HERBALISM = 182, MINING = 186, TAILORING = 197, ENGINEERING = 202,
+    ENCHANTING = 333, SKINNING = 393, JEWELCRAFTING = 755, INSCRIPTION = 773,
+}
+local PROFESSION_NAMES = {
+    [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy",
+    [182] = "Herbalism", [186] = "Mining", [197] = "Tailoring",
+    [202] = "Engineering", [333] = "Enchanting", [393] = "Skinning",
+    [755] = "Jewelcrafting", [773] = "Inscription",
+}
+
 local ENCHANT_RULE_DATA = {
     [36] = { name = "Enchant: Fiery Blaze", stats = {  }, top = false, slot = 16, kind = "weapon" },
     [37] = { name = "Weapon Chain", stats = {  }, top = false, slot = 16, kind = "weapon" },
@@ -439,7 +451,7 @@ local ENCHANT_RULE_DATA = {
     [4270] = { name = "Drakehide Leg Armor", stats = { DODGE = 55, STA = 145 }, top = false, slot = 7 },
     [4359] = { name = "Enchant Ring - Greater Agility", stats = { AGI = 160 }, top = true, slot = 11 },
     [4360] = { name = "Enchant Ring - Greater Intellect", stats = { INT = 160 }, top = true, slot = 11 },
-    [4361] = { name = "Enchant Ring - Greater Stamina", stats = { STA = 240 }, top = true, slot = 11 },
+    [4361] = { name = "Enchant Ring - Greater Stamina", stats = { STA = 240 }, top = true, slot = 11, role = "TANK" },
     [4411] = { name = "Enchant Bracer - Mastery", stats = { MASTERY = 170 }, top = true, slot = 9 },
     [4412] = { name = "Enchant Bracer - Major Dodge", stats = { DODGE = 170 }, top = true, slot = 9 },
     [4414] = { name = "Enchant Bracer - Super Intellect", stats = { INT = 180 }, top = true, slot = 9 },
@@ -491,7 +503,7 @@ local ENCHANT_RULE_DATA = {
     [4872] = { name = "Brutal Leg Armor", stats = { CRIT = 100, STR = 170 }, top = false, slot = 7 },
     [4875] = { name = "Fur Lining - Agility (Rank 3)", stats = { AGI = 500 }, top = true, slot = 9 },
     [4877] = { name = "Fur Lining - Intellect (Rank 3)", stats = { INT = 500 }, top = true, slot = 9 },
-    [4878] = { name = "Fur Lining - Stamina (Rank 3)", stats = { STA = 750 }, top = true, slot = 9 },
+    [4878] = { name = "Fur Lining - Stamina (Rank 3)", stats = { STA = 750 }, top = true, slot = 9, role = "TANK" },
     [4879] = { name = "Fur Lining - Strength (Rank 3)", stats = { STR = 500 }, top = true, slot = 9 },
     [4880] = { name = "Primal Leg Reinforcements (Rank 3)", stats = { AGI = 285, CRIT = 165 }, top = true, slot = 7 },
     [4881] = { name = "Draconic Leg Reinforcements (Rank 3)", stats = { CRIT = 165, STR = 285 }, top = true, slot = 7 },
@@ -500,17 +512,17 @@ local ENCHANT_RULE_DATA = {
     [4884] = { name = "Heavy Leg Reinforcements (Rank 2)", stats = { DODGE = 55, STA = 143 }, top = false, slot = 7 },
     [4885] = { name = "Draconic Leg Reinforcements (Rank 2)", stats = { CRIT = 55, STR = 95 }, top = false, slot = 7 },
     [4892] = { name = "Lightweave Embroidery (Rank 3)", stats = { INT = 2000 }, top = true, slot = 15 },
-    [4893] = { name = "Darkglow Embroidery (Rank 3)", stats = { SPI = 3000 }, top = true, slot = 15 },
+    [4893] = { name = "Darkglow Embroidery (Rank 3)", stats = { SPI = 3000 }, top = true, slot = 15, role = "HEALER" },
     [4894] = { name = "Swordguard Embroidery (Rank 3)", stats = { AP = 4000 }, top = true, slot = 15 },
     [4895] = { name = "Master's Spellthread (Rank 3)", stats = { CRIT = 165, INT = 285 }, top = true, slot = 7 },
     [4896] = { name = "Sanctified Spellthread (Rank 3)", stats = { INT = 285, SPI = 165 }, top = true, slot = 7 },
     [4897] = { name = "Goblin Glider", stats = {  }, top = false, slot = 15 },
-    [4898] = { name = "Synapse Springs (Mark II)", stats = {  }, top = false, slot = 10 },
+    [4898] = { name = "Synapse Springs (Mark II)", stats = {  }, top = true, slot = 10 },
     [4907] = { name = "Tiger Fang Inscription", stats = { CRIT = 80, STR = 120 }, top = false, slot = 3 },
     [4908] = { name = "Tiger Claw Inscription", stats = { AGI = 120, CRIT = 80 }, top = false, slot = 3 },
     [4909] = { name = "Crane Wing Inscription", stats = { CRIT = 80, INT = 120 }, top = false, slot = 3 },
     [4910] = { name = "Ox Horn Inscription", stats = { DODGE = 80, STA = 180 }, top = false, slot = 3 },
-    [4912] = { name = "Secret Ox Horn Inscription", stats = { DODGE = 100, STA = 780 }, top = true, slot = 3 },
+    [4912] = { name = "Secret Ox Horn Inscription", stats = { DODGE = 100, STA = 780 }, top = true, slot = 3, role = "TANK" },
     [4913] = { name = "Secret Tiger Fang Inscription", stats = { CRIT = 100, STR = 520 }, top = true, slot = 3 },
     [4914] = { name = "Secret Tiger Claw Inscription", stats = { AGI = 520, CRIT = 100 }, top = true, slot = 3 },
     [4915] = { name = "Secret Crane Wing Inscription", stats = { CRIT = 100, INT = 520 }, top = true, slot = 3 },
@@ -523,6 +535,33 @@ local ENCHANT_RULE_DATA = {
     [5035] = { name = "Enchant Weapon - Glorious Tyranny", stats = { PVP = 600 }, top = false, slot = 16, kind = "weapon", pvp = true },
     [5124] = { name = "Enchant Weapon - Spirit of Conquest", stats = { INT = 1650 }, top = true, slot = 16, kind = "weapon" },
     [5125] = { name = "Enchant Weapon - Bloody Dancing Steel", stats = { AGI = 1650, STR = 1650 }, top = true, slot = 16, kind = "weapon" },
+}
+
+-- MoP metas have no old color-count activation requirement. The policy below
+-- therefore validates presence, current tier, PvE purpose and spec/role fit.
+local META_GEM_POLICY = {
+    [76879] = "INT", [76884] = "AGI", [76885] = "INT", [76886] = "STR",
+    [76887] = "OTHER", [76888] = "HEALER",
+    [76890] = "PVP", [76891] = "PVP", [76892] = "PVP", [76893] = "PVP", [76894] = "PVP",
+    [76895] = "TANK", [76896] = "TANK", [76897] = "TANK",
+    [95344] = "TANK", [95345] = "HEALER", [95346] = "PHYSICAL", [95347] = "CASTER", [95348] = "PVP",
+}
+
+local JEWELCRAFTING_GEMS = {
+    [83141]=true, [83142]=true, [83143]=true, [83144]=true, [83145]=true, [83146]=true,
+    [83147]=true, [83148]=true, [83149]=true, [83150]=true, [83151]=true, [83152]=true,
+    [93404]=true, [93405]=true, [93406]=true, [93408]=true, [93409]=true, [93410]=true,
+}
+local ENGINEERING_COGWHEELS = {
+    [77540]=true, [77541]=true, [77542]=true, [77543]=true,
+    [77544]=true, [77545]=true, [77546]=true, [77547]=true,
+}
+local PROFESSION_ENCHANTS = {
+    [333] = { [4078]=true, [4079]=true, [4080]=true, [4081]=true, [4359]=true, [4360]=true, [4361]=true, [4807]=true },
+    [165] = { [4189]=true, [4190]=true, [4191]=true, [4192]=true, [4875]=true, [4877]=true, [4878]=true, [4879]=true },
+    [197] = { [3722]=true, [3728]=true, [3730]=true, [4115]=true, [4116]=true, [4118]=true, [4892]=true, [4893]=true, [4894]=true },
+    [202] = { [4179]=true, [4223]=true, [4897]=true, [4898]=true, [5000]=true },
+    [773] = { [4912]=true, [4913]=true, [4914]=true, [4915]=true },
 }
 
 local STAT_KEYS = {
@@ -572,6 +611,36 @@ end
 local function SafeAPI(fn, ...)
     if type(fn) ~= "function" then return false end
     return pcall(fn, ...)
+end
+
+local function ProfessionsKnown(entry)
+    if not entry or not entry.professionsKnown or type(entry.professions) ~= "table" then return false end
+    if entry.professionSource == "comm" and
+        (not entry.professionAt or GetTime() - entry.professionAt > 120) then return false end
+    return true
+end
+
+local function HasProfession(entry, professionID)
+    return ProfessionsKnown(entry) and entry.professions[professionID] == true
+end
+
+local function ProfessionForEnchant(enchantID)
+    for professionID, ids in pairs(PROFESSION_ENCHANTS) do
+        if ids[enchantID] then return professionID end
+    end
+end
+
+local function MetaProblem(metaKind, expected, role)
+    if not metaKind then return nil end
+    if metaKind == "PVP" then return nil end -- the normal PvP policy gives the clearer reason
+    if metaKind == "OTHER" then return "meta gem is not an approved main-stat, healer or tank PvE option" end
+    if metaKind == "INT" and expected ~= "INT" then return "meta gem requires an INT spec" end
+    if metaKind == "AGI" and expected ~= "AGI" then return "meta gem requires an AGI spec" end
+    if metaKind == "STR" and expected ~= "STR" then return "meta gem requires a STR spec" end
+    if metaKind == "PHYSICAL" and expected == "INT" then return "meta proc requires a physical spec" end
+    if metaKind == "CASTER" and expected ~= "INT" then return "meta proc requires a caster spec" end
+    if metaKind == "HEALER" and role ~= "HEALER" then return "meta proc requires role HEALER" end
+    if metaKind == "TANK" and role ~= "TANK" then return "meta proc requires role TANK" end
 end
 
 local function GetEnchantID(link)
@@ -678,6 +747,17 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
             end
             local gemID = gemLink and tonumber(gemLink:match("item:(%d+)"))
             local rule = gemID and GEM_RULE_DATA[gemID]
+            if gemID then
+                detail.gemIDs = detail.gemIDs or {}
+                detail.gemIDs[#detail.gemIDs + 1] = gemID
+                if JEWELCRAFTING_GEMS[gemID] then
+                    result.jewelcraftingGems = result.jewelcraftingGems + 1
+                    result.professionEvidence[PROFESSION.JEWELCRAFTING] = true
+                elseif ENGINEERING_COGWHEELS[gemID] then
+                    result.professionEvidence[PROFESSION.ENGINEERING] = true
+                end
+                if META_GEM_POLICY[gemID] then detail.metaGemID = gemID end
+            end
             local infoName, _, quality, level
             if gemLink then
                 local infoOK
@@ -686,6 +766,13 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
             end
             gemName = gemName or infoName or (rule and rule.name) or ("gem #" .. index)
             local reasons = {}
+            if gemID and JEWELCRAFTING_GEMS[gemID] and ProfessionsKnown(entry) and
+                not HasProfession(entry, PROFESSION.JEWELCRAFTING) then
+                reasons[#reasons + 1] = "profession gem requires Jewelcrafting"
+            elseif gemID and ENGINEERING_COGWHEELS[gemID] and ProfessionsKnown(entry) and
+                not HasProfession(entry, PROFESSION.ENGINEERING) then
+                reasons[#reasons + 1] = "cogwheel requires Engineering"
+            end
             if rule then
                 if (quality or rule.quality) < 3 then reasons[#reasons + 1] = "below rare (blue) quality" end
                 if rule.pvp or (rule.stats.PVP or 0) > 0 or (rule.stats.RESIL or 0) > 0 then
@@ -693,14 +780,13 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
                 end
                 local problem = StatProblem(rule.stats, expected)
                 if problem then reasons[#reasons + 1] = problem end
-                if expected and rule.primary and ((rule.primary == "PHYSICAL" and expected == "INT") or
-                    (rule.primary == "INT" and expected ~= "INT")) then
-                    reasons[#reasons + 1] = "meta proc for a different type of spec"
-                end
-                if rule.role and entry.role and entry.role ~= "NONE" then
-                    if entry.role ~= rule.role then reasons[#reasons + 1] = "meta proc requires role " .. rule.role end
-                elseif rule.role then
+                local metaKind = gemID and META_GEM_POLICY[gemID]
+                if metaKind and (not entry.role or entry.role == "NONE") and
+                    (metaKind == "HEALER" or metaKind == "TANK") then
                     ValidationWarning(result, detail, gemName .. ": role unavailable")
+                else
+                    local metaProblem = MetaProblem(metaKind, expected, entry.role)
+                    if metaProblem then reasons[#reasons + 1] = metaProblem end
                 end
             elseif gemID and infoName and quality and level then
                 if quality < 3 then reasons[#reasons + 1] = "below rare (blue) quality" end
@@ -732,10 +818,15 @@ end
 
 local function CheckEnchantPolicy(result, detail, link, entry, expected, equipLoc, quality)
     local id = GetEnchantID(link)
-    local required = ENCHANT_SLOTS[detail.slot] and (quality or 0) >= 3
+    local professionRequired
+    if detail.slot == 9 and HasProfession(entry, PROFESSION.LEATHERWORKING) then professionRequired = PROFESSION.LEATHERWORKING
+    elseif detail.slot == 15 and HasProfession(entry, PROFESSION.TAILORING) then professionRequired = PROFESSION.TAILORING
+    elseif detail.slot == 3 and HasProfession(entry, PROFESSION.INSCRIPTION) then professionRequired = PROFESSION.INSCRIPTION
+    elseif (detail.slot == 11 or detail.slot == 12) and HasProfession(entry, PROFESSION.ENCHANTING) then professionRequired = PROFESSION.ENCHANTING end
+    local required = (ENCHANT_SLOTS[detail.slot] or professionRequired) and (quality or 0) >= 3
     detail.enchant = "Not required by ARC rules"
-    -- Belt buckles and extra sockets are not permanent stat enchants. Rings
-    -- remain optional because another player's profession is not inspectable.
+    -- Belt buckles and extra sockets are handled as sockets. Rings become
+    -- required only when Enchanting was confirmed locally or over ARC comms.
     if not ENCHANT_SLOTS[detail.slot] and detail.slot ~= 11 and detail.slot ~= 12 then return end
     if id == 0 then
         if required then
@@ -752,6 +843,16 @@ local function CheckEnchantPolicy(result, detail, link, entry, expected, equipLo
         return
     end
     local reasons = {}
+    local visibleProfession = ProfessionForEnchant(id)
+    if visibleProfession then
+        result.professionEvidence[visibleProfession] = true
+        if ProfessionsKnown(entry) and not HasProfession(entry, visibleProfession) then
+            reasons[#reasons + 1] = "profession bonus requires " .. PROFESSION_NAMES[visibleProfession]
+        end
+    end
+    if professionRequired and visibleProfession ~= professionRequired then
+        reasons[#reasons + 1] = "missing " .. PROFESSION_NAMES[professionRequired] .. " profession bonus"
+    end
     if rule.pvp then reasons[#reasons + 1] = "PvP-oriented bonus" end
     if not rule.top then reasons[#reasons + 1] = "below the approved top MoP raid tier" end
     local problem = StatProblem(rule.stats, expected)
@@ -786,11 +887,17 @@ end
 
 function ARC:AnalyzeUnitGear(unit, entry)
     if not unit or not UnitExists(unit) or not entry then return nil end
+    if UnitIsUnit and UnitIsUnit(unit, "player") and ARC.ReadSelfProfessions then
+        local professions, known, code = ARC:ReadSelfProfessions()
+        entry.professions, entry.professionsKnown, entry.professionSource = professions, known, known and "self" or nil
+        entry.professionAt, entry.professionCode = known and GetTime() or nil, known and code or nil
+    end
     local result = {
         scanned = true, scannedAt = GetTime(), totalSockets = 0, missingGems = 0,
         missingGemSlots = {}, missingEnchants = {}, wrongPrimary = {},
         lowItems = {}, missingItems = {}, wrongArmor = {}, itemLevels = {},
         slots = {}, pendingSlots = {}, badGems = {}, badEnchants = {}, unverified = {},
+        professionIssues = {}, professionEvidence = {}, jewelcraftingGems = 0,
         minItemLevel = (ARC_DB and tonumber(ARC_DB.minItemLevel)) or 450,
     }
     local expectedPrimary = SPEC_PRIMARY[entry.specID]
@@ -858,10 +965,15 @@ function ARC:AnalyzeUnitGear(unit, entry)
             end
             stats = stats or {}
             local sockets = SocketCount(stats)
+            local baseSockets = sockets
             local filled = FilledGemCount(link, sockets)
             -- Include inserted gems in added sockets (belt buckle, profession
             -- sockets) even when base-item stats do not describe those sockets.
             sockets = math.max(sockets, filled or 0)
+            local buckleRequired = slot == 6 and (quality or 0) >= 3 and effectiveLevel and effectiveLevel >= 450
+            local blacksmithSocket = HasProfession(entry, PROFESSION.BLACKSMITHING) and
+                (slot == 9 or slot == 10) and (quality or 0) >= 3 and effectiveLevel and effectiveLevel >= 450
+            if buckleRequired or blacksmithSocket then sockets = math.max(sockets, baseSockets + 1) end
             if sockets > 0 then
                 if filled ~= nil then
                     detail.gems = math.min(filled, sockets) .. "/" .. sockets
@@ -871,6 +983,14 @@ function ARC:AnalyzeUnitGear(unit, entry)
                     if missing > 0 then
                         detail.issues[#detail.issues + 1] = missing .. " missing gem(s)"
                         result.missingGemSlots[#result.missingGemSlots + 1] = label .. " (" .. missing .. ")"
+                    end
+                    if buckleRequired and filled < baseSockets + 1 then
+                        detail.issues[#detail.issues + 1] = "Missing or empty Living Steel Belt Buckle socket"
+                    end
+                    if blacksmithSocket and filled < baseSockets + 1 then
+                        detail.issues[#detail.issues + 1] = "Missing or empty Blacksmithing profession socket"
+                    elseif blacksmithSocket then
+                        result.professionEvidence[PROFESSION.BLACKSMITHING] = true
                     end
                 end
             else
@@ -920,6 +1040,11 @@ function ARC:AnalyzeUnitGear(unit, entry)
         if detail.pending then result.pendingSlots[#result.pendingSlots + 1] = detail.label end
     end
 
+    if HasProfession(entry, PROFESSION.JEWELCRAFTING) and result.jewelcraftingGems < 2 then
+        result.professionIssues[#result.professionIssues + 1] =
+            "Jewelcrafting: only " .. result.jewelcraftingGems .. "/2 Serpent's Eye bonus gems equipped"
+    end
+
     if offLinkOK and (mainEquipLoc == "INVTYPE_WEAPON" or mainEquipLoc == "INVTYPE_WEAPONMAINHAND") and
         not offLink and offDetail and offDetail.empty and not offDetail.pending then
         offDetail.issues[#offDetail.issues + 1] = "Missing off-hand for one-handed main weapon"
@@ -932,7 +1057,8 @@ function ARC:AnalyzeUnitGear(unit, entry)
     if not expectedPrimary then result.unverified[#result.unverified + 1] = "Spec unavailable - primary-stat suitability not evaluated" end
     result.auditComplete = result.scanned and #result.unverified == 0
     result.issueCount = result.missingGems + #result.missingEnchants +
-        #result.wrongPrimary + #result.wrongArmor + #result.lowItems + #result.missingItems + #result.badGems + #result.badEnchants
+        #result.wrongPrimary + #result.wrongArmor + #result.lowItems + #result.missingItems +
+        #result.badGems + #result.badEnchants + #result.professionIssues
     entry.gear = result
     if result.scanned and not result.validationPending then entry.lastGearScan = result.scannedAt end
     return result.averageItemLevel
@@ -945,4 +1071,6 @@ ARC.GEAR_RULES = {
     enchantSlots = ENCHANT_SLOTS,
     gems = GEM_RULE_DATA,
     enchants = ENCHANT_RULE_DATA,
+    professions = PROFESSION_NAMES,
+    metaGems = META_GEM_POLICY,
 }

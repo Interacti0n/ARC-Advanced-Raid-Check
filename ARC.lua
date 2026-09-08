@@ -47,6 +47,7 @@ eventFrame:RegisterEvent("UNIT_PET")
 eventFrame:RegisterEvent("PET_BAR_UPDATE")
 eventFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 eventFrame:RegisterEvent("BAG_UPDATE")
+eventFrame:RegisterEvent("SKILL_LINES_CHANGED")
 eventFrame:RegisterEvent("PARTY_LOOT_METHOD_CHANGED")
 eventFrame:RegisterEvent("PLAYER_DIFFICULTY_CHANGED")
 eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
@@ -190,6 +191,10 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
     elseif event == "PLAYER_TALENT_UPDATE" or event == "ACTIVE_TALENT_GROUP_CHANGED" or event == "PLAYER_LEVEL_UP" then
         ARC.selfDirty = true
         if event == "ACTIVE_TALENT_GROUP_CHANGED" then ARC.forceSelfGearScan = true end
+
+    elseif event == "SKILL_LINES_CHANGED" then
+        ARC.selfDirty = true
+        ARC.forceSelfGearScan = true
 
     elseif event == "PET_BAR_UPDATE" or event == "BAG_UPDATE" or event == "UPDATE_SHAPESHIFT_FORM" then
         ARC.selfDirty = true

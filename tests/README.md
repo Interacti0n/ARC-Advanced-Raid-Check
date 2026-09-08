@@ -66,11 +66,13 @@ It checks:
 - numeric minimum-ilvl input, Enter/Apply, invalid values and Escape.
 - clean reports, reused/hidden rows, long scrollable findings and separate readiness;
 - rare/Perfect/profession/legendary gems, old and green gems, PvP hybrids/metas;
+- belt-buckle enforcement, normal/legendary meta suitability and role exceptions;
+- profession channel validation and reliably visible profession gear bonuses;
 - wrong primary stats, legendary proc suitability and extra-socket gem validation;
 - top/weak/PvP enchants, profession options, runeforges, scopes and off-hands;
 - cold gem retries without another inspect or lost ilvl; unknown data cannot pass;
 - hunter ranged weapon ilvl weighting.
-- raid-session attendance, AFK intervals, 10-second trash inactivity with
+- raid-session attendance, AFK intervals, 5-second trash inactivity with
   retroactive threshold credit/reset, boss kills/first deaths and copyable reports.
 - stale TOC omitting the new module: one startup warning, safe world/inspect
   events and update ticks, actionable `/arc check` feedback, working raid UI,

@@ -1,3 +1,17 @@
+v1.8.0 CHANGES
+  - Added a required filled Living Steel Belt Buckle socket on raid-level belts;
+    its gem uses the same top-tier MoP PvE stat and no-PvP policy as all gems.
+  - Added strict normal and legendary meta-gem suitability for STR, AGI, INT,
+    healer and tank specs; tanks may use their physical DPS meta and healers may
+    use caster metas.
+  - Added compact profession reporting between ARC clients and local profession
+    detection for self-checks.
+  - Added reliable profession gear checks for Blacksmithing sockets,
+    Jewelcrafting Serpent's Eyes, Enchanting rings, Leatherworking fur linings,
+    Tailoring embroideries and Inscription shoulder bonuses.
+  - Visible profession-only gems, cogwheels and enchants are validated directly;
+    unavailable or unsafe-to-infer bonuses do not create false failures.
+
 v1.7.0 CHANGES
   - Rebuilt Session Report as sortable Players, expandable Bosses and compact
     Export views with a persistent raid summary.

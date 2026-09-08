@@ -113,10 +113,18 @@ The Character Info window opened with **C** also has an **ARC Check** button in
 its upper-left header. It always opens the same local self-check and receives
 the ElvUI button skin when ElvUI is active.
 
-The report starts with identity, class/level, spec/role, guild and estimated
-upgraded item level. It then lists only confirmed problems and unverified
-results. Healthy equipment is intentionally omitted because the normal inspect
-window already shows it.
+The report starts with identity, class/level, spec/role, guild, any confirmed
+professions and estimated upgraded item level. It then lists only confirmed
+problems and unverified results. Healthy equipment is intentionally omitted
+because the normal inspect window already shows it.
+
+Raid-level belts require a filled Living Steel Belt Buckle socket. Normal and
+legendary meta gems must be top-tier PvE options matching the spec/role; tank
+specs may use their DPS meta and healers may use caster metas. With a fresh ARC
+profession report, the check also enforces reliably visible Blacksmithing,
+Jewelcrafting, Enchanting, Leatherworking, Tailoring and Inscription gear
+bonuses. Missing private or inconsistently exposed profession data is not
+invented as a failure.
 
 The standalone window intentionally omits Flask, Food, durability and
 Healthstone readiness. Those remain visible in the main raid window; ARC Check

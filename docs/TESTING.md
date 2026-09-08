@@ -44,7 +44,11 @@ replace a live 5.4.8 client, a private server's APIs or visual inspection.
 4. Test a weak enchant and a known PvP enchant.
 5. Confirm accepted blue Perfect cuts, profession enchants, DK runeforges,
    hunter scopes, shields and caster off-hands.
-6. Unknown or uncached IDs must remain **Unverified**, never green OK.
+6. Remove/fill the Living Steel Belt Buckle socket and test a valid and PvP gem.
+7. Test normal and legendary metas on caster, physical, healer and tank specs.
+8. With two ARC clients, confirm professions arrive after a report and that
+   Blacksmithing sockets, Jewelcrafting gems and Enchanting rings update safely.
+9. Unknown or uncached IDs must remain **Unverified**, never green OK.
 
 ## Readiness and session checks
 

@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.7.0"
+ARC.VERSION       = "1.8.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.REFRESH_EVERY = 1.0                    -- seconds between live refreshes
@@ -583,6 +583,51 @@ end
 -- ADDON COMMS  (report OUR OWN accurate ilvl/durability/spec to the raid)
 --=============================================================================
 
+local PROFESSION_IDS = {
+    [164]=true, [165]=true, [171]=true, [182]=true, [186]=true, [197]=true,
+    [202]=true, [333]=true, [393]=true, [755]=true, [773]=true,
+}
+local PROFESSION_NAME_IDS = {
+    ["Blacksmithing"]=164, ["Leatherworking"]=165, ["Alchemy"]=171,
+    ["Herbalism"]=182, ["Mining"]=186, ["Tailoring"]=197,
+    ["Engineering"]=202, ["Enchanting"]=333, ["Skinning"]=393,
+    ["Jewelcrafting"]=755, ["Inscription"]=773,
+}
+
+function ARC:ReadSelfProfessions()
+    local out = {}
+    if type(GetProfessions) ~= "function" or type(GetProfessionInfo) ~= "function" then return out, false, "?" end
+    local ok, first, second = pcall(GetProfessions)
+    if not ok then return out, false, "?" end
+    for _, index in ipairs({ first, second }) do
+        if index then
+            local read, name, _, _, _, _, _, skillLine = pcall(GetProfessionInfo, index)
+            if not read then return {}, false, "?" end
+            local id = tonumber(skillLine) or PROFESSION_NAME_IDS[name]
+            if not id or not PROFESSION_IDS[id] then return {}, false, "?" end
+            out[id] = true
+        end
+    end
+    local ids = {}
+    for id in pairs(out) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for index, id in ipairs(ids) do ids[index] = tostring(id) end
+    return out, true, #ids > 0 and table.concat(ids, ",") or "-"
+end
+
+function ARC:DecodeProfessions(code)
+    if code == "-" then return {}, true end
+    if type(code) ~= "string" or code == "" or code == "?" or code:find("[^%d,]") then return nil, false end
+    local out, count = {}, 0
+    for token in code:gmatch("[^,]+") do
+        local id = tonumber(token)
+        if not id or not PROFESSION_IDS[id] or out[id] then return nil, false end
+        out[id], count = true, count + 1
+    end
+    if count < 1 or count > 2 then return nil, false end
+    return out, true
+end
+
 local function BuildSelfPayload()
     local id, sname, icon = GetSelfSpec()
     local avgAll, avgEquipped = GetAverageItemLevel()
@@ -591,6 +636,12 @@ local function BuildSelfPayload()
     local upgradedLevel = selfEntry and selfEntry.gear and selfEntry.gear.averageItemLevel
     local durAvg, durWorst = GetSelfDurability()
     local prep = selfEntry and selfEntry.preparation or {}
+    local professions, professionsKnown, professionCode = ARC:ReadSelfProfessions()
+    if selfEntry then
+        selfEntry.professions, selfEntry.professionsKnown = professions, professionsKnown
+        selfEntry.professionSource, selfEntry.professionAt = professionsKnown and "self" or nil, professionsKnown and GetTime() or nil
+        selfEntry.professionCode = professionsKnown and professionCode or nil
+    end
     -- fields separated by ^ ; keep it short, addon messages cap at 255 chars
     local parts = {
         ARC.VERSION,
@@ -605,6 +656,7 @@ local function BuildSelfPayload()
         "P1", prep.pet or "?", prep.growl or "?",
         selfEntry and selfEntry.sacrifice and selfEntry.sacrifice.state or "?",
         prep.healthstone or "?", prep.petGUID or "-", prep.form or "?",
+        "F1", professionCode,
     }
     return table.concat(parts, "^")
 end
@@ -645,7 +697,8 @@ end
 local function HandleCommMessage(sender, msg)
     if type(msg) ~= "string" or #msg > 255 then return end
     local ver, name, specID, ilvl, dur, durWorst, extension, talentCode, weaponCode,
-        prepVersion, petCode, growlCode, sacrificeCode, stoneCode, petGUID, formCode = strsplit("^", msg)
+        prepVersion, petCode, growlCode, sacrificeCode, stoneCode, petGUID, formCode,
+        professionVersion, professionCode = strsplit("^", msg)
     if not ver or not name then return end
     -- Attribute data to the client-authenticated sender, never to the name
     -- supplied inside the payload, and ignore reports from outside the group.
@@ -694,6 +747,16 @@ local function HandleCommMessage(sender, msg)
             e.sacrifice = { state = sacrificeCode, checkedAt = GetTime(), specID = tonumber(specID) }
         end
     end
+    local previousProfessionCode = e.professionCode
+    e.professions, e.professionsKnown, e.professionSource, e.professionAt, e.professionCode = nil, false, nil, nil, nil
+    if extension == "R1" and professionVersion == "F1" then
+        local professions, known = ARC:DecodeProfessions(professionCode)
+        if known then
+            e.professions, e.professionsKnown, e.professionSource, e.professionAt, e.professionCode =
+                professions, true, "comm", GetTime(), professionCode
+        end
+    end
+    if previousProfessionCode ~= e.professionCode then e.lastGearScan = nil end
     if ARC.ScanSelfBuffs then e.selfBuffs = ARC:ScanSelfBuffs(e.unit, e) end
 end
 

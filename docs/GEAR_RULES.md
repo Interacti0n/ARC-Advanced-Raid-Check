@@ -35,8 +35,12 @@ depend on the client's cache. Refresh the report to capture changed equipment.
   effects: Destructive 76890, Powerful 76891, Enigmatic 76892, Impassive 76893,
   Forlorn 76894. Tyrannical 95348 fails its PvP stats.
 - Legendary meta applicability: Indomitable 95344 is tank, Courageous 95345
-  healer, Capacitive 95346 physical and Sinister 95347 INT. This does not require
-  a player to own a legendary meta; a suitable normal MoP meta is accepted.
+  healer, Capacitive 95346 physical and Sinister 95347 caster. Tanks may use
+  their matching physical DPS meta and healers may use a matching caster meta.
+  Normal top-tier alternatives are limited to matching STR/AGI/INT, healer and
+  tank Primal Diamonds. Fleet and the PvP/CC metas are rejected. MoP Primal and
+  legendary metas have no old color-count activation requirement; an empty or
+  unreadable meta socket is handled by the normal missing/Unverified rules.
 - For an uncatalogued gem with client item data, quality below 3 or gem ilvl
   below 90 identifies a weak/old tier. Available live stats can additionally
   identify wrong primary/PvP stats. Other uncatalogued gems remain Unverified.
@@ -79,10 +83,32 @@ the raid policy for its disarm-oriented effect. Spirit of Conquest (5124) and
 Bloody Dancing Steel (5125) are accepted as PvE-effect equivalents of Jade
 Spirit/Dancing Steel; PvP reward provenance alone is not a stat defect.
 
-Rings are audited if enchanted, but not required: inspect does not establish
-another player's profession. Buckles, engineering tinkers and optional added
-sockets are not substitutes for ordinary stat enchants, nor does ARC claim
-to verify that every possible profession bonus is present.
+Rings are audited if enchanted and become required when Enchanting is confirmed
+locally or by a fresh ARC profession report. Buckles, engineering tinkers and
+optional added sockets are not substitutes for ordinary stat enchants.
+
+## Belt buckle and profession bonuses
+
+- A rare-or-better waist item at raid level (450+) must have one filled added
+  Living Steel Belt Buckle socket beyond its base sockets. Because some 5.4.8
+  cores cannot distinguish an unapplied buckle from an applied but empty added
+  socket, both states use the confirmed finding **Missing or empty Living Steel
+  Belt Buckle socket**. The inserted gem is checked by the normal top-tier MoP
+  PvE policy, including primary/secondary usefulness and PvP rejection.
+- ARC reads the local player's two primary professions and sends their numeric
+  skill-line IDs through the backwards-compatible `F1` addon-channel extension.
+  A fresh report lets another ARC client require only reliably visible bonuses:
+  Blacksmithing wrist/hand sockets, two Jewelcrafting Serpent's Eyes,
+  Enchanting ring enchants, Leatherworking fur lining, Tailoring embroidery and
+  Inscription's Secret shoulder inscription.
+- Profession-only gems, cogwheels and recognized enchant effects are identified
+  directly from inspected gear. If a fresh ARC profession report contradicts
+  that requirement, ARC reports it. With no profession report, ownership is not
+  guessed and the otherwise-valid visible bonus remains accepted.
+- Engineering tinkers can coexist with ordinary enchants and are exposed
+  inconsistently by private-server item links. Recognized effects are validated,
+  but a missing Engineering tinker is not a confirmed failure. Alchemy and
+  gathering profession benefits are likewise not inferred from gear.
 
 ## Unverified and snapshot behavior
 
@@ -103,11 +129,10 @@ to verify that every possible profession bonus is present.
 ## Limits
 
 No secondary-stat optimization, spirit/haste/hit-cap advice, socket-color bonus
-optimization, meta activation check, profession ownership check, trinket proc
-evaluation or detection based solely on an item's PvP vendor/source. Inserted
-gems in extra sockets are audited, but empty extra sockets cannot be guaranteed
-when the client exposes only the base item's sockets. Server-custom stat or ID
-changes need explicit policy updates and in-game verification.
+optimization, trinket proc evaluation or detection based solely on an item's
+PvP vendor/source. Profession ownership is exact only for self or a fresh ARC
+report; unsafe-to-infer bonuses remain neutral. Server-custom stat or ID changes
+need explicit policy updates and in-game verification.
 
 ## Data source and maintenance
 

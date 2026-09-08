@@ -8,7 +8,7 @@ answering ready checks automatically.
 ## Highlights
 
 - ready state, role, spec, consumables, raid buffs and ARC version
-- upgrade-aware item level, durability reports and detailed PvE gear checks
+- upgrade-aware item level, durability, belt buckle, meta and profession-aware PvE gear checks
 - talents, class self-buffs, tank stance, pets, Growl and Healthstone checks
 - a clear **READY TO PULL**, **NOT READY** or **CHECK INCOMPLETE** verdict
 - standalone **ARC Check** for a targeted player, even outside your group
@@ -71,7 +71,7 @@ The product name is **Advanced Raid Check**, but technical identifiers remain
 
 ## Version
 
-Current version: **1.7.0**
+Current version: **1.8.0**
 
 ## License
 

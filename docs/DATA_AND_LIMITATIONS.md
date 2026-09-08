@@ -15,6 +15,8 @@ instead of inventing a pass or failure. The deliberate exceptions are remote
 | Spec and equipped gear | No | Requires inspect range and a successful inspect |
 | Upgrade-aware equipped item level | No | Estimated from inspected item links/tooltips |
 | Gem/enchant/primary-stat policy | No | Item and gem data must be cached and inspectable |
+| Visible profession gear effects | No | Ownership is unknown without ARC; link exposure varies by core |
+| Exact primary professions | **Yes** | Self is local; grouped ARC clients send two skill-line IDs |
 | Empty talent tiers | Usually no | Requires fresh GUID-matched inspect data |
 | Own durability | No | Read directly and accurately |
 | Remote durability | **Yes** | Durability is private and is not exposed by inspect |
@@ -49,29 +51,32 @@ ARC reports only information the sender can reliably read about itself. The
 channel improves private-data checks and freshness; it does not grant access to
 arbitrary character data or bypass inspect range.
 
-Current clients share durability, talents and class-readiness fields such as
-pet state, Growl autocast, stance/form, weapon imbues and Healthstones. Older
-ARC versions remain compatible, but unavailable newer fields stay unverified.
+Current clients share durability, two primary professions, talents and
+class-readiness fields such as pet state, Growl autocast, stance/form, weapon
+imbues and Healthstones. Older ARC versions remain compatible, but unavailable
+newer fields stay unverified.
 The ARC column displays **Old** for a detected older client.
 
 Grouped clients refresh relevant reports at least every 15 seconds, subject to
 the existing two-second minimum send interval. Time-sensitive pet, stance,
 weapon-imbue and Healthstone information expires after 30 seconds. Remote
-talent information older than 65 seconds becomes unverified until refreshed.
+talent information older than 65 seconds and profession information older than
+120 seconds becomes unverified until refreshed.
 
 ## Gear-policy boundaries
 
 ARC checks required equipped slots, class armor specialization, missing
 off-hands for one-handed main weapons, minimum item level, obvious STR/AGI/INT
-mismatches, sockets, gem tier/quality, known PvP stats and an explicit top-tier
-MoP enchant catalog. It does not attempt to optimize secondary-stat weights or
-caps, socket bonuses, meta activation, trinket procs, profession ownership or
-the source/vendor of an item.
+mismatches, sockets, a required filled raid-level belt buckle socket, gem
+tier/quality, meta suitability, known PvP stats and an explicit top-tier MoP
+enchant catalog. It does not attempt to optimize secondary-stat weights or caps,
+socket bonuses, trinket procs or the source/vendor of an item.
 
-An empty additional profession or belt-buckle socket cannot always be detected
-when the client exposes only the base item's sockets. Gems already inserted in
-extra sockets are still validated. Unknown or custom gem/enchant IDs are
-**Unverified**, not automatically accepted or rejected.
+ARC can require reliably visible profession gear bonuses after a fresh self or
+addon-channel profession report. Without that report it validates visible
+profession effects but does not guess ownership. Engineering, Alchemy and
+gathering bonuses that the item link cannot prove stay neutral. Unknown or
+custom gem/enchant IDs are **Unverified**, not automatically accepted or rejected.
 
 See [Gear rules](GEAR_RULES.md) for the exact policy.
 

@@ -171,6 +171,13 @@ local function RenderDetail(frame)
     AddLine(frame, "Class / level", (entry.className or "Unknown") .. " / " .. (entry.level or "?"))
     AddLine(frame, "Spec / role", (entry.specName or "Unavailable") .. " / " .. (ROLE_NAMES[entry.role] or "Unknown"))
     if entry.guild then AddLine(frame, "Guild", entry.guild) end
+    if entry.professionsKnown and type(entry.professions) == "table" then
+        local names = {}
+        local catalog = ARC.GEAR_RULES and ARC.GEAR_RULES.professions or {}
+        for id in pairs(entry.professions) do names[#names + 1] = catalog[id] or tostring(id) end
+        table.sort(names)
+        AddLine(frame, "Professions", #names > 0 and table.concat(names, ", ") or "None reported")
+    end
     local threshold = gear and gear.minItemLevel or (ARC_DB and ARC_DB.minItemLevel) or 450
     AddLine(frame, "Equipped iLvl", (complete and ("~" .. tostring(gear.averageItemLevel)) or "Loading") ..
         "   |   Minimum per item: " .. threshold)
@@ -187,7 +194,8 @@ local function RenderDetail(frame)
     if not complete then
         summary, tone = "Incomplete equipment data - no final verdict", "warn"
     elseif gear.issueCount > 0 then
-        summary, tone = gear.issueCount .. " issue(s) in " .. problemSlots .. " slot(s)", "bad"
+        summary, tone = gear.issueCount .. " gear issue(s)", "bad"
+        if problemSlots > 0 then summary = summary .. " in " .. problemSlots .. " slot(s)" end
         if not gear.auditComplete then summary = summary .. "; some checks unverified" end
     elseif not gear.auditComplete then
         summary, tone = "No confirmed issues; some checks are unverified", "warn"
@@ -205,6 +213,11 @@ local function RenderDetail(frame)
                 AddLine(frame, item.label, text, "bad", item)
             end
         end
+    end
+
+    if gear and gear.professionIssues and #gear.professionIssues > 0 then
+        AddSection(frame, "PROFESSION BONUSES", "Confirmed professions with missing visible gear bonuses", "bad")
+        for _, message in ipairs(gear.professionIssues) do AddLine(frame, "Profession", message, "bad") end
     end
 
     if not complete or (gear.unverified and #gear.unverified > 0) then
@@ -324,6 +337,8 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
         entry.role = peer.role
         entry.weaponBuffs, entry.weaponBuffAt = peer.weaponBuffs, peer.weaponBuffAt
         entry.preparation, entry.sacrifice = peer.preparation, peer.sacrifice
+        entry.professions, entry.professionsKnown, entry.professionSource, entry.professionAt =
+            peer.professions, peer.professionsKnown, peer.professionSource, peer.professionAt
     end
     local f = self.playerCheckFrame
     if not f then f = BuildDetailFrame(); self.playerCheckFrame = f end

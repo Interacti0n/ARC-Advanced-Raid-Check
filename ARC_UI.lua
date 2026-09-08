@@ -388,6 +388,13 @@ local function AddGearTooltip(e)
     local gear = e.gear
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Gear check", 1, 0.82, 0)
+    if e.professionsKnown and type(e.professions) == "table" and
+        (e.professionSource ~= "comm" or (e.professionAt and GetTime() - e.professionAt <= 120)) then
+        local names, catalog = {}, ARC.GEAR_RULES and ARC.GEAR_RULES.professions or {}
+        for id in pairs(e.professions) do names[#names + 1] = catalog[id] or tostring(id) end
+        table.sort(names)
+        GameTooltip:AddLine("Professions: " .. (#names > 0 and table.concat(names, ", ") or "none reported"), 0.7, 0.85, 1, true)
+    end
     if not gear or not gear.scanned then
         GameTooltip:AddLine("Waiting for inspect data", 0.6, 0.6, 0.6)
         return
@@ -406,6 +413,7 @@ local function AddGearTooltip(e)
     end
     for _, text in ipairs(gear.badGems or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
     for _, text in ipairs(gear.badEnchants or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.professionIssues or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
     for _, text in ipairs(gear.unverified or {}) do GameTooltip:AddLine("Unverified: " .. text, 1, 0.78, 0.2, true) end
     if #gear.wrongPrimary > 0 then
         GameTooltip:AddLine("Wrong primary stat (expected " .. (gear.expectedPrimary or "?") .. "):", 1, 0.35, 0.2)

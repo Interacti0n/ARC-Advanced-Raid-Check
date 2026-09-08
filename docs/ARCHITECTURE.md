@@ -40,9 +40,10 @@ with compatible older clients.
 ## Communication model
 
 The addon channel supplements unit and inspect APIs with self-reported private
-data. It does not replace inspect for equipment and does not trust missing
-fields as failures. Messages remain sender-bound, freshness-limited and
-backward-compatible; unknown fields from older peers stay unverified.
+data, including compact primary-profession IDs. It does not replace inspect for
+equipment and does not trust missing fields as failures. Messages remain
+sender-bound, freshness-limited and backward-compatible; unknown fields from
+older peers stay unverified.
 
 See [Data sources and limitations](DATA_AND_LIMITATIONS.md) and
 [Readiness checks](READINESS_CHECKS.md) for the public behavior and protocol
