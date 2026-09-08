@@ -37,6 +37,15 @@ name changed, but these identifiers intentionally did not:
 Keeping them stable preserves settings, enabled-addon state and communication
 with compatible older clients.
 
+## Saved-variable migrations
+
+`ARC_DB.schemaVersion` is independent from the addon release version. Database
+defaults are applied after guarded, incremental migrations in `ARC_Core.lua`.
+Each migration advances the schema only after success and must be idempotent so
+an interrupted step can safely run again. Unknown fields and session history
+are preserved. If an older addon sees a newer schema, it keeps that version and
+skips migration instead of downgrading or replacing the database.
+
 ## Communication model
 
 The addon channel supplements unit and inspect APIs with self-reported private

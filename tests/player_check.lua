@@ -543,6 +543,30 @@ local function beginReady()
     readyStatus, readyTimeLeft = "waiting", 30
     readyEvent("READY_CHECK", "SomeoneElse", 30)
 end
+test("saved-variable schema upgrades legacy data without resets and preserves newer schemas", function()
+    local original = ARC_DB
+    local sessions = { { marker = "keep" } }
+    ARC_DB = {
+        manualMode = true, minItemLevel = 477, sessions = sessions,
+        minimap = { hide = true, angle = 91 }, futureUnknownField = "keep",
+    }
+    ARC.Internal.ARC_InitDB()
+    assert(ARC_DB.schemaVersion == ARC.DB_SCHEMA_VERSION)
+    assert(ARC_DB.manualMode and ARC_DB.minItemLevel == 477)
+    assert(ARC_DB.sessions == sessions and ARC_DB.futureUnknownField == "keep")
+    assert(ARC_DB.minimap.hide and ARC_DB.minimap.angle == 91)
+
+    local futureVersion = ARC.DB_SCHEMA_VERSION + 3
+    ARC_DB = { schemaVersion = futureVersion, manualMode = true, futureUnknownField = "keep" }
+    ARC.Internal.ARC_InitDB()
+    assert(ARC_DB.schemaVersion == futureVersion and ARC_DB.futureUnknownField == "keep")
+    assert(ARC_DB.manualMode and type(ARC_DB.raidSetup) == "table")
+
+    ARC_DB = "corrupt"
+    ARC.Internal.ARC_InitDB()
+    assert(type(ARC_DB) == "table" and ARC_DB.schemaVersion == ARC.DB_SCHEMA_VERSION)
+    ARC_DB = original
+end)
 test("manual mode never opens a hidden window or auto-answers", function()
     ARC:Hide(); local calls = responseCount
     assert(ARC_DB.manualMode == false)

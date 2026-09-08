@@ -35,6 +35,7 @@ mocked WoW APIs, verifies the player-check entry and checks version agreement.
 It checks:
 
 - consistent Advanced Raid Check branding, unchanged settings/slash/prefix and countdown;
+- legacy, corrupt and newer saved-variable schemas without setting/history loss;
 - compact inspect-header button anchors, long-title space, reopening and title-widget fallbacks;
 - full Talents label/column width and the simplified talent tooltip;
 - problem-item icons, captured full-link tooltips, target changes and no hover inspect requests;

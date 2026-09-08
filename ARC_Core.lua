@@ -87,14 +87,61 @@ ARC.FULL_REFRESH_EVERY = 5.0               -- expensive aura/gear fallback scan
 ARC.CONSUMABLE_WARN_SECONDS = 300          -- warn when flask/food has <= 5 min left
 ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often than this
 ARC.INSPECT_RETRY_GAP = 12.0               -- seconds before retrying a failed inspect
+ARC.DB_SCHEMA_VERSION = 1                  -- independent from the addon release version
 
 --=============================================================================
 -- SAVED VARIABLES / DEFAULTS
 --=============================================================================
 
+-- Migrations are deliberately incremental and must remain safe to run again.
+-- Add future changes as DB_MIGRATIONS[2], [3], ... and only modify fields that
+-- belong to that schema step.  Version 1 tags the legacy database; its shape is
+-- already compatible, so no stored settings or session reports need rewriting.
+local DB_MIGRATIONS = {
+    [1] = function(_) end,
+}
+
+local function MigrateDB(db)
+    local version = tonumber(db.schemaVersion)
+    if not version or version < 0 or version ~= math.floor(version) then version = 0 end
+
+    -- A downgraded addon must never claim or rewrite a schema it does not know.
+    -- Known settings can still be read defensively by the defaults below.
+    if version > ARC.DB_SCHEMA_VERSION then
+        if not ARC.dbSchemaWarningShown then
+            print("|cffffcc00ARC:|r saved settings come from a newer ARC version; " ..
+                "unknown data was preserved and no database migration was attempted.")
+            ARC.dbSchemaWarningShown = true
+        end
+        return false
+    end
+
+    while version < ARC.DB_SCHEMA_VERSION do
+        local nextVersion = version + 1
+        local migration = DB_MIGRATIONS[nextVersion]
+        if type(migration) ~= "function" then
+            print("|cffff0000ARC:|r missing saved-variable migration to schema " .. nextVersion ..
+                "; existing data was preserved.")
+            return false
+        end
+        local ok, err = pcall(migration, db)
+        if not ok then
+            print("|cffff0000ARC:|r saved-variable migration to schema " .. nextVersion ..
+                " failed; it will be retried after reload. " .. tostring(err))
+            return false
+        end
+        -- Advance only after the complete step succeeds. Future migrations must
+        -- be idempotent so an interrupted/partially applied step is safe to retry.
+        version = nextVersion
+        db.schemaVersion = version
+    end
+    return true
+end
+
 local function ARC_InitDB()
-    ARC_DB = ARC_DB or {}
+    if type(ARC_DB) ~= "table" then ARC_DB = {} end
     local d = ARC_DB
+    MigrateDB(d)
     if d.point == nil then d.point = { "CENTER", "UIParent", "CENTER", 0, 150 } end
     if d.locked == nil then d.locked = false end
     if d.autoHide == nil then d.autoHide = true end -- hide automatically on pull (PLAYER_REGEN_DISABLED)

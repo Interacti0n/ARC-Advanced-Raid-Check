@@ -11,6 +11,8 @@ v1.8.0 CHANGES
     Tailoring embroideries and Inscription shoulder bonuses.
   - Visible profession-only gems, cogwheels and enchants are validated directly;
     unavailable or unsafe-to-infer bonuses do not create false failures.
+  - Added a versioned ARC_DB schema with guarded, incremental migrations that
+    preserve legacy settings, session history and unknown newer-version data.
 
 v1.7.0 CHANGES
   - Rebuilt Session Report as sortable Players, expandable Bosses and compact

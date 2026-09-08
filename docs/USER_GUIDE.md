@@ -186,7 +186,9 @@ See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 | `/arc session end` | Finish and save the active session |
 | `/arc help` | Print the command list |
 
-Settings are stored account-wide in `ARC_DB`.
+Settings are stored account-wide in `ARC_DB`. Updates migrate older settings in
+place and preserve session history. Installing an older ARC over a newer saved
+database does not downgrade its schema or discard unknown data.
 
 ## Documentation map
 
