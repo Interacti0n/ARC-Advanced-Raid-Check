@@ -75,6 +75,6 @@ Do not label the version verified on the server until the live checklist passes.
 - All nine Python release-tooling tests passed, including minimal ZIP contents.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.
 - Version metadata is aligned at 1.9.0.
-- Live verification pending: hover the ARC cell with ElvUI, compare local latency/FPS and receive health reports from a second updated client.
-- Live MoP 5.4.8 / ElvUI / two-client testing is **still required**.
-- No release tag, push or GitHub publication was performed by this preflight.
+- User-reported local in-game testing passed; a full raid and multi-client test
+  remains pending. This release does not claim full raid verification.
+- Version 1.9.0 is approved for stable publication and subsequent maintenance.
