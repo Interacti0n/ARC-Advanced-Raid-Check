@@ -699,6 +699,7 @@ function ARC:RecordSessionLoot(playerKey, itemLink, quantity, bonus, context, or
                     prior.itemLink, prior.itemID, prior.quantity, prior.bonusResult =
                         itemLink, ItemIDFromLink(itemLink), quantity, "item"
                     ResolveLootMetadata(prior)
+                    self:RefreshSessionReport()
                 end
                 return prior
             end
@@ -709,7 +710,9 @@ function ARC:RecordSessionLoot(playerKey, itemLink, quantity, bonus, context, or
         local prior = session.loot[index]
         local sameReward = prior and ((itemLink and prior.itemLink == itemLink) or
             (not itemLink and not prior.itemLink and prior.bonusResult == bonus))
-        if sameReward and prior.player == playerKey and math.abs(now - (prior.at or now)) <= LOOT_DUPLICATE_WINDOW then
+        -- Ordinary CHAT_MSG_LOOT events can be separate identical awards.
+        -- Only confirmed bonus-roll reports can represent the same reward.
+        if bonus and prior and prior.bonusResult and sameReward and prior.player == playerKey and math.abs(now - (prior.at or now)) <= LOOT_DUPLICATE_WINDOW then
             if bonus then prior.bonusResult = bonus end
             if context and prior.sourceType ~= "boss" then
                 prior.sourceType, prior.bossName, prior.encounterID, prior.difficulty, prior.pullIndex =

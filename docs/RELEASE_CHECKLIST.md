@@ -70,7 +70,7 @@ Do not label the version verified on the server until the live checklist passes.
 
 ## Current 1.9.0 local preflight — 2026-09-09
 
-- 135 mocked ARC regression tests passed, including connection sampling, unavailable APIs, health thresholds, report expiry and sender validation alongside existing gear/session checks.
+- 139 mocked ARC regression tests passed, including connection sampling, report expiry and inspect fallback, sender validation, consumable hover failures, pending profession gems and separate identical loot awards.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.
 - All nine Python release-tooling tests passed, including minimal ZIP contents.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.

@@ -734,6 +734,7 @@ end
 local function CheckGemPolicy(result, detail, link, entry, expected)
     local fields = ParseItemFields(link)
     if not fields then
+        result.gemIdentityPending = true
         ValidationWarning(result, detail, "Gem fields unavailable")
         return
     end
@@ -746,6 +747,7 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
                 if not gemOK then gemName, gemLink = nil, nil end
             end
             local gemID = gemLink and tonumber(gemLink:match("item:(%d+)"))
+            if not gemID then result.gemIdentityPending = true end
             local rule = gemID and GEM_RULE_DATA[gemID]
             if gemID then
                 detail.gemIDs = detail.gemIDs or {}
@@ -1040,7 +1042,8 @@ function ARC:AnalyzeUnitGear(unit, entry)
         if detail.pending then result.pendingSlots[#result.pendingSlots + 1] = detail.label end
     end
 
-    if HasProfession(entry, PROFESSION.JEWELCRAFTING) and result.jewelcraftingGems < 2 then
+    if HasProfession(entry, PROFESSION.JEWELCRAFTING) and result.jewelcraftingGems < 2 and
+        not result.gemIdentityPending and #result.pendingSlots == 0 then
         result.professionIssues[#result.professionIssues + 1] =
             "Jewelcrafting: only " .. result.jewelcraftingGems .. "/2 Serpent's Eye bonus gems equipped"
     end

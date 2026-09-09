@@ -62,6 +62,7 @@ local function ScanRequest(request)
         return
     end
     local e = request.entry
+    ARC:ExpirePeerReport(e)
     if e.specSource ~= "comm" and GetInspectSpecialization then
         local resolvedSpec = false
         local specOK, specID = pcall(GetInspectSpecialization, request.unit)
@@ -78,7 +79,7 @@ local function ScanRequest(request)
     local level = ARC:AnalyzeUnitGear(request.unit, e)
     if ARC.ScanTalents then ARC:ScanTalents(request.unit, e, true) end
     if ARC.ScanSelfBuffs then e.selfBuffs = ARC:ScanSelfBuffs(request.unit, e) end
-    if level and (request.kind == "manual" or not e.hasARC) then e.ilvl, e.ilvlApprox = level, true end
+    if level and (request.kind == "manual" or not e.hasARC or e.commExpired) then e.ilvl, e.ilvlApprox = level, true end
     if e.gear and e.gear.scanned and not e.gear.validationPending then
         FinishRequest(request, "complete", "Snapshot captured. Use Refresh after equipment changes.")
     end

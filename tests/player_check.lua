@@ -2270,7 +2270,6 @@ test("session loot groups boss rewards, bonus rolls and epic trash with exact to
         local bossLink = "|cffa335ee|Hitem:1020:0:0:0:0:0:0:0:90:0:0:0|h[Boss Token]|h|r"
         local bossMessage = "Alice receives loot: " .. bossLink .. "."
         ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "CHAT_MSG_LOOT", bossMessage, "Alice")
-        ARCSessionEventFrame.scripts.OnEvent(ARCSessionEventFrame, "CHAT_MSG_LOOT", bossMessage, "Alice")
         assert(#session.loot == 1 and session.loot[1].bossName == "Sha of Pride")
         assert(session.loot[1].difficultyTag == "Heroic" and session.loot[1].forgedTag == "Warforged")
 
@@ -2450,5 +2449,74 @@ test("connection reports stay sender-bound and old peers remain neutral", functi
     assert(not entry.connectionHealth)
     end)
     units.party1 = nil
+end)
+test("expired peer data gives way to inspect and fresh reports recover", function()
+    local f = start()
+    f.entry.specSource, f.entry.specID = "comm", 71
+    f.entry.lastComm, f.entry.hasARC = now - 121, true
+    f.entry.durPct, f.entry.durWorst, f.entry.ilvl = 100, 100, 999
+    step(); ARC.OnInspectReady("A")
+    assert(f.entry.commExpired and not f.entry.durPct and not f.entry.durWorst)
+    assert(f.entry.specSource == "inspect" and f.entry.specID ~= 71)
+    assert(f.entry.ilvl and f.entry.ilvl ~= 999)
+    ARC:ExpirePeerReport(f.entry)
+    assert(f.entry.specSource == "inspect", "Repeated expiry must preserve new inspect data")
+    withGlobals({ IsInGroup=function() return true end, GetNumGroupMembers=function() return 2 end }, function()
+        units.party1 = alice
+        ARC.Internal.HandleCommMessage("Alice-Realm", "1.9.0^Alice-Realm^62^510^90^80")
+        local e = ARC.roster["Alice-Realm"]
+        e.lastComm = now - 121; ARC:ExpirePeerReport(e)
+        assert(e.commExpired and not e.ilvl)
+        ARC.Internal.HandleCommMessage("Alice-Realm", "1.9.0^Alice-Realm^62^510^90^80")
+        assert(not e.commExpired and e.ilvl == 510 and e.durPct == 90)
+        units.party1 = nil
+    end)
+end)
+
+test("uncached profession gems do not become missing Jewelcrafting bonuses", function()
+    start(); gemCold = true
+    local overrides = { [1] = { gems = { 83150, 83150 } } }
+    local gear = policyScan(overrides, 62, "MAGE", "DAMAGER", { [755]=true })
+    assert(gear.validationPending and #gear.professionIssues == 0 and not gear.auditComplete)
+    gemCold = false
+    gear = policyScan(overrides, 62, "MAGE", "DAMAGER", { [755]=true })
+    assert(gear.jewelcraftingGems == 2 and #gear.professionIssues == 0)
+end)
+
+test("buff hover survives aura and tooltip API failures", function()
+    menuStart(); ARC:Show()
+    local row = ARC.frame.rows[1]
+    local e = ARC.roster[row.fullName]
+    e.flask, e.flaskName = true, "Test Flask"
+    withGlobals({ UnitBuff=function() error("aura failure") end }, function()
+        assert(pcall(row.scripts.OnEnter, row))
+    end)
+    local original = ARCScanTooltip.SetUnitBuff
+    ARCScanTooltip.SetUnitBuff = function() error("tooltip failure") end
+    withGlobals({ UnitBuff=function() return "Test Flask" end }, function()
+        assert(pcall(row.scripts.OnEnter, row))
+        assert(not ARCScanTooltip:IsShown())
+    end)
+    ARCScanTooltip.SetUnitBuff = original
+    ARC:Hide()
+end)
+
+test("identical ordinary awards stay separate from bonus-roll reports", function()
+    local saved, refresh = ARC.activeSession, ARC.RefreshSessionReport
+    ARC.activeSession = { members={Alice={}}, loot={} }
+    local updates = 0
+    ARC.RefreshSessionReport = function() updates = updates + 1 end
+    local link = "|cffa335ee|Hitem:1020:0:0:0:0:0:0:0:90:0:0:0|h[Token]|h|r"
+    local context = { name="Boss", encounterID=715, pullIndex=1 }
+    ARC:RecordSessionLoot("Alice", link, 1, nil, context, "chat")
+    ARC:RecordSessionLoot("Alice", link, 1, nil, context, "chat")
+    assert(#ARC.activeSession.loot == 2)
+    ARC:RecordSessionLoot("Alice", nil, 1, "none", context, "comm")
+    local before = updates
+    ARC:RecordSessionLoot("Alice", link, 1, "item", context, "bonus")
+    assert(#ARC.activeSession.loot == 3 and updates > before)
+    ARC:RecordSessionLoot("Alice", link, 1, "item", context, "comm")
+    assert(#ARC.activeSession.loot == 3 and ARC.activeSession.loot[3].itemLink == link)
+    ARC.activeSession, ARC.RefreshSessionReport = saved, refresh
 end)
 print("Passed " .. passed .. " ARC regression tests")

@@ -435,6 +435,17 @@ end
 
 -- Pull everything that's freely readable for one unit (works for anyone,
 -- ARC or not) and merge it into the roster entry.
+function ARC:ExpirePeerReport(e)
+    if not e or not e.lastComm or e.commExpired or
+        (e.unit and UnitIsUnit(e.unit, "player")) or GetTime() - e.lastComm <= 120 then return end
+    e.commExpired = true
+    e.durPct, e.durWorst, e.ilvl = nil, nil, nil
+    if e.specSource == "comm" then
+        e.specID, e.specName, e.specIcon, e.specSource = nil, nil, nil, nil
+        e.gear, e.lastGearScan = nil, nil
+    end
+end
+
 local function RefreshUnitPublicData(unit)
     if not UnitExists(unit) then return end
     local fullName, name = GetUnitIdentity(unit)
@@ -444,6 +455,7 @@ local function RefreshUnitPublicData(unit)
     e.name  = name
     e.fullName = fullName
     e.unit  = unit
+    ARC:ExpirePeerReport(e)
     e.level = UnitLevel(unit)
     e.class = select(2, UnitClass(unit))
     e.role  = UnitGroupRolesAssigned(unit) -- "TANK" | "HEALER" | "DAMAGER" | "NONE"
@@ -575,6 +587,7 @@ function ARC:RefreshRosterStatus()
                 needsFullRefresh = true
             else
                 e.unit = unit
+                self:ExpirePeerReport(e)
                 e.role = UnitGroupRolesAssigned(unit)
                 e.online = (not UnitIsConnected) or UnitIsConnected(unit)
                 e.dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) or false
@@ -851,6 +864,7 @@ local function HandleCommMessage(sender, msg)
     e.hasARC   = true
     e.arcVersion = ver
     e.lastComm = GetTime()
+    e.commExpired = nil
     e.connectionHealth = nil
     if healthVersion == "H1" then
         local function decode(value, maximum)

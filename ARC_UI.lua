@@ -290,7 +290,7 @@ end
 
 local ARCScanTip = CreateFrame("GameTooltip", "ARCScanTooltip", nil, "GameTooltipTemplate")
 
-local function GetBuffTooltipDetail(unit, matchName)
+local function GetBuffTooltipDetailUnsafe(unit, matchName)
     if not unit or not matchName or not UnitExists(unit) then return nil end
     for i = 1, 40 do
         local name = UnitBuff(unit, i)
@@ -317,6 +317,12 @@ end
 --=============================================================================
 -- RIGHT-CLICK CONTEXT MENU (Whisper / Inspect / Remind)
 --=============================================================================
+
+local function GetBuffTooltipDetail(unit, matchName)
+    local ok, detail = pcall(GetBuffTooltipDetailUnsafe, unit, matchName)
+    pcall(ARCScanTip.Hide, ARCScanTip)
+    return ok and detail or nil
+end
 
 function ARC:GetConfirmedIssueTags(e)
     local tags = {}

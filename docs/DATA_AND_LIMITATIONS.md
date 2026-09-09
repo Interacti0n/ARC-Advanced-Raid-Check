@@ -109,3 +109,11 @@ does not estimate it from deaths or repair costs.
 Session trash inactivity is intentionally approximate. It measures the absence
 of recorded combat participation after the configured five-second threshold; it
 is not proof of real-world AFK behavior. See [Session reports](SESSION_REPORT.md).
+# Remote report freshness
+
+After 120 seconds without a readiness report, ARC clears remote reported item
+level and durability and releases the reported specialization for inspect.
+Durability stays unavailable until a fresh owner report arrives. ARC installation
+and version remain detected; connection health retains its own stale-data color.
+Jewelcrafting bonus counts remain unverified while gem identities or equipment
+are loading, rather than reporting a confirmed shortage.
