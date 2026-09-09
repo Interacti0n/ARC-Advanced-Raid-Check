@@ -1,3 +1,9 @@
+v1.9.0 CHANGES
+  - Added Connection Health through the existing ARC column: color reflects
+    latency, averaged FPS and report age; hover shows values and ARC version.
+  - Uses a compact backwards-compatible H1 extension on existing reports.
+    Unknown data stays neutral; no alerts or readiness blockers are added.
+
 v1.8.0 CHANGES
   - Added a required filled Living Steel Belt Buckle socket on raid-level belts;
     its gem uses the same top-tier MoP PvE stat and no-PvP policy as all gems.

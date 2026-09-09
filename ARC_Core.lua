@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.8.0"
+ARC.VERSION       = "1.9.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.COMM_MAX_BYTES = 255                   -- legacy MoP addon-message payload limit
@@ -679,6 +679,52 @@ function ARC:DecodeProfessions(code)
     return out, true
 end
 
+-- Local measurements only; peers report their own values through H1.
+local function HealthNumber(value, maximum)
+    return type(value) == "number" and value == value and value >= 0 and value <= maximum
+end
+
+function ARC:SampleConnectionHealth()
+    local now = GetTime()
+    local sample = self.healthSamples or { sum = 0, count = 0 }
+    self.healthSamples = sample
+    if sample.sampledAt and now - sample.sampledAt < 1 then return end
+    sample.sampledAt = now
+    local ok, fps = false, nil
+    if type(GetFramerate) == "function" then ok, fps = pcall(GetFramerate) end
+    if ok and HealthNumber(fps, 10000) then
+        sample.sum, sample.count = sample.sum + fps, sample.count + 1
+    end
+    if self.connectionHealth and now - self.connectionHealth.at < self.COMM_HEARTBEAT then return end
+    local netOK, home, world
+    if type(GetNetStats) == "function" then
+        local success, _, _, h, w = pcall(GetNetStats)
+        netOK, home, world = success, h, w
+    end
+    self.connectionHealth = {
+        at = now,
+        home = netOK and HealthNumber(home, 60000) and math.floor(home + 0.5) or nil,
+        world = netOK and HealthNumber(world, 60000) and math.floor(world + 0.5) or nil,
+        fps = sample.count > 0 and math.floor(sample.sum / sample.count + 0.5) or nil,
+    }
+    sample.sum, sample.count = 0, 0
+end
+
+function ARC:GetConnectionHealth(e)
+    if not e or not e.hasARC or e.online == false then return "unknown" end
+    local isSelf = e.unit and UnitIsUnit(e.unit, "player")
+    local data = isSelf and self.connectionHealth or e.connectionHealth
+    if not data then return "unknown" end
+    local age = math.max(0, GetTime() - data.at)
+    if age > 45 then return "bad", data, age end
+    if age > 30 then return "warn", data, age end
+    local ping = math.max(data.home or 0, data.world or 0)
+    if ping > 300 or (data.fps and data.fps < 15) then return "bad", data, age end
+    if ping > 150 or (data.fps and data.fps < 30) then return "warn", data, age end
+    if not data.home or not data.world or not data.fps then return "unknown", data, age end
+    return "good", data, age
+end
+
 local function BuildSelfPayload()
     local id, sname, icon = GetSelfSpec()
     local avgAll, avgEquipped = GetAverageItemLevel()
@@ -709,6 +755,13 @@ local function BuildSelfPayload()
         prep.healthstone or "?", prep.petGUID or "-", prep.form or "?",
         "F1", professionCode,
     }
+    local health = ARC.connectionHealth
+    if health then
+        parts[#parts + 1] = "H1"
+        parts[#parts + 1] = tostring(health.home or -1)
+        parts[#parts + 1] = tostring(health.world or -1)
+        parts[#parts + 1] = tostring(health.fps or -1)
+    end
     return table.concat(parts, "^")
 end
 
@@ -789,7 +842,7 @@ local function HandleCommMessage(sender, msg)
     end
     local ver, name, specID, ilvl, dur, durWorst, extension, talentCode, weaponCode,
         prepVersion, petCode, growlCode, sacrificeCode, stoneCode, petGUID, formCode,
-        professionVersion, professionCode = strsplit("^", msg)
+        professionVersion, professionCode, healthVersion, homePing, worldPing, fps = strsplit("^", msg)
     if not ver or not name then return end
     -- Attribute data to the client-authenticated sender, never to the name
     -- supplied inside the payload, and ignore reports from outside the group.
@@ -798,6 +851,18 @@ local function HandleCommMessage(sender, msg)
     e.hasARC   = true
     e.arcVersion = ver
     e.lastComm = GetTime()
+    e.connectionHealth = nil
+    if healthVersion == "H1" then
+        local function decode(value, maximum)
+            if type(value) ~= "string" or not value:match("^%d+$") then return nil end
+            local number = tonumber(value)
+            if HealthNumber(number, maximum) then return number end
+        end
+        local home, world, rate = decode(homePing, 60000), decode(worldPing, 60000), decode(fps, 10000)
+        if home or world or rate then
+            e.connectionHealth = { home = home, world = world, fps = rate, at = GetTime() }
+        end
+    end
     specID = tonumber(specID)
     if specID and specID > 0 and GetSpecializationInfoByID then
         local ok, id, sname, _, icon, _, role = pcall(GetSpecializationInfoByID, specID)

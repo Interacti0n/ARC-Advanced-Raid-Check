@@ -68,12 +68,13 @@ and [GitHub CLI upload documentation](https://cli.github.com/manual/gh_release_u
 A local `candidate` ZIP is not a published release or proof of in-game testing.
 Do not label the version verified on the server until the live checklist passes.
 
-## Current 1.8.0 local preflight — 2026-09-08
+## Current 1.9.0 local preflight — 2026-09-09
 
-- 132 mocked ARC regression tests passed, including belt buckle, meta suitability, profession reporting/gear bonuses, private-server API failures, local self-checks, session loot/tables, retention and compatibility paths.
+- 135 mocked ARC regression tests passed, including connection sampling, unavailable APIs, health thresholds, report expiry and sender validation alongside existing gear/session checks.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.
-- All eight addon Lua modules and the test harness parsed as Lua 5.1.
+- All nine Python release-tooling tests passed, including minimal ZIP contents.
 - `git diff --check` passed; Git only noted its configured LF/CRLF conversion.
-- Version metadata is aligned at 1.8.0.
+- Version metadata is aligned at 1.9.0.
+- Live verification pending: hover the ARC cell with ElvUI, compare local latency/FPS and receive health reports from a second updated client.
 - Live MoP 5.4.8 / ElvUI / two-client testing is **still required**.
 - No release tag, push or GitHub publication was performed by this preflight.

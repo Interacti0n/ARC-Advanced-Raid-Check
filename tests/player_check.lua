@@ -1806,7 +1806,7 @@ test("outgoing P1 reports round-trip real pet, Sacrifice, charge and form fields
             ARCEventFrame.scripts.OnUpdate(ARCEventFrame, 1.1)
             assert(message and #message <= 255)
             local fields = { strsplit("^", message) }
-            assert(#fields == 18 and fields[7] == "R1" and fields[10] == "P1" and fields[14] == "3")
+            assert(#fields == 22 and fields[19] == "H1" and fields[7] == "R1" and fields[10] == "P1" and fields[14] == "3")
             assert(fields[17] == "F1" and fields[18] == "?")
             local entry = assert(ARC.roster["Me-Realm"])
             entry.preparation, entry.sacrifice = nil, nil
@@ -2394,5 +2394,61 @@ test("automatic raid sessions survive wipes, stop after leaving and retain only 
     end)
     ARC.activeSession, ARC_DB.activeSession, ARC.autoOutsideSince = nil, nil, nil
     ARC_DB.sessions, ARC_DB.autoSessionSuppressedKey = {}, nil
+end)
+test("connection sampling averages FPS and tolerates broken APIs", function()
+    local savedHealth, savedSamples = ARC.connectionHealth, ARC.healthSamples
+    ARC.connectionHealth, ARC.healthSamples = nil, nil
+    local fps = 60
+    withGlobals({ GetNetStats=function() return 0, 0, 100, 120 end,
+        GetFramerate=function() return fps end }, function()
+        ARC:SampleConnectionHealth()
+        assert(ARC.connectionHealth.fps == 60 and ARC.connectionHealth.world == 120)
+        fps = 10
+        now = now + 1; ARC:SampleConnectionHealth()
+        fps = 50
+        now = now + 14; ARC:SampleConnectionHealth()
+        assert(ARC.connectionHealth.fps == 30)
+    end)
+    ARC.connectionHealth, ARC.healthSamples = nil, nil
+    withGlobals({ GetNetStats=function() error("unsupported") end,
+        GetFramerate=function() return 0/0 end }, function()
+        ARC:SampleConnectionHealth()
+        assert(not ARC.connectionHealth.fps and not ARC.connectionHealth.home)
+    end)
+    ARC.connectionHealth, ARC.healthSamples = savedHealth, savedSamples
+end)
+
+test("connection health thresholds and stale or unavailable data", function()
+    local e = { hasARC=true, online=true, connectionHealth={home=150,world=150,fps=30,at=now} }
+    assert(ARC:GetConnectionHealth(e) == "good")
+    e.connectionHealth.world = 151
+    assert(ARC:GetConnectionHealth(e) == "warn")
+    e.connectionHealth.world = 301
+    assert(ARC:GetConnectionHealth(e) == "bad")
+    e.connectionHealth.world, e.connectionHealth.fps = 100, 14
+    assert(ARC:GetConnectionHealth(e) == "bad")
+    e.connectionHealth.fps, e.connectionHealth.at = 60, now - 31
+    assert(ARC:GetConnectionHealth(e) == "warn")
+    e.connectionHealth.at = now - 46
+    assert(ARC:GetConnectionHealth(e) == "bad")
+    e.online = false
+    assert(ARC:GetConnectionHealth(e) == "unknown")
+end)
+
+test("connection reports stay sender-bound and old peers remain neutral", function()
+    menuStart(); units.party1 = alice
+    withGlobals({ IsInGroup=function() return true end, GetNumGroupMembers=function() return 2 end }, function()
+    local base = "1.9.0^Forged-Realm^262^500^100^100^R1^111111^xx^P1^?^?^?^?^-^?^F1^-"
+    ARC.Internal.HandleCommMessage("Alice-Realm", base .. "^H1^100^120^60")
+    local entry = ARC.roster["Alice-Realm"]
+    assert(entry.connectionHealth.world == 120 and ARC:GetConnectionHealth(entry) == "good")
+    ARC.Internal.HandleCommMessage("Mallory-Realm", base .. "^H1^999^999^1")
+    assert(entry.connectionHealth.world == 120)
+    ARC.Internal.HandleCommMessage("Alice-Realm", base .. "^H1^nan^999999^oops")
+    assert(ARC:GetConnectionHealth(entry) == "unknown")
+    ARC.Internal.HandleCommMessage("Alice-Realm", base)
+    assert(not entry.connectionHealth)
+    end)
+    units.party1 = nil
 end)
 print("Passed " .. passed .. " ARC regression tests")

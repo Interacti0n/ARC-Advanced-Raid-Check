@@ -477,6 +477,37 @@ local function CreateRow(parent, index)
         end
     end
 
+    local healthHover = CreateFrame("Frame", nil, row)
+    healthHover:SetPoint("TOPLEFT", row, "TOPLEFT", 780, 0)
+    healthHover:SetSize(50, ROW_HEIGHT)
+    healthHover:EnableMouse(true)
+    row.healthHover = healthHover
+    healthHover:SetScript("OnEnter", function(self)
+        local e = row.fullName and ARC.roster[row.fullName]
+        if not e then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine("ARC - " .. (e.name or row.fullName), 1, 1, 1)
+        GameTooltip:AddLine("Version: " .. (e.arcVersion or "Not detected"), 0.8, 0.8, 0.8)
+        local tone, data, age = ARC:GetConnectionHealth(e)
+        local function metric(label, value, suffix)
+            GameTooltip:AddLine(label .. ": " .. (value and (value .. suffix) or "Unavailable"), 0.8, 0.8, 0.8)
+        end
+        metric("Home latency", data and data.home, " ms")
+        metric("World latency", data and data.world, " ms")
+        metric("FPS (averaged)", data and data.fps, "")
+        if age then GameTooltip:AddLine(string.format("Health report: %ds ago", math.floor(age)), 0.8, 0.8, 0.8) end
+        if e.lastComm and e.hasARC then
+            GameTooltip:AddLine(string.format("Last ARC message: %ds ago", math.floor(math.max(0, GetTime() - e.lastComm))), 0.8, 0.8, 0.8)
+        end
+        if age and age > 30 then
+            GameTooltip:AddLine("Stale report; connection loss is not confirmed.", 1, 0.78, 0.2)
+        elseif tone == "unknown" then
+            GameTooltip:AddLine("Connection data unavailable.", 0.6, 0.6, 0.6)
+        end
+        GameTooltip:Show()
+    end)
+    healthHover:SetScript("OnLeave", function() GameTooltip:Hide() end)
+
     row:EnableMouse(true)
     row:SetScript("OnEnter", function(self)
         if not self.fullName then return end
@@ -1122,9 +1153,10 @@ function ARC:Render()
         if talTone == "bad" then talentIssues = talentIssues + 1 end
         if buffTone == "bad" then selfBuffIssues = selfBuffIssues + 1 end
         if stoneTone == "bad" then stoneIssues = stoneIssues + 1 end
-        if versionState == -1 then row.arc:SetTextColor(1, 0.3, 0.2)
-        elseif versionState == 1 then row.arc:SetTextColor(0.3, 0.8, 1)
-        elseif e.hasARC then row.arc:SetTextColor(0.2, 1, 0.7)
+        local healthTone = self:GetConnectionHealth(e)
+        if healthTone == "bad" then row.arc:SetTextColor(1, 0.25, 0.25)
+        elseif healthTone == "warn" then row.arc:SetTextColor(1, 0.78, 0.2)
+        elseif healthTone == "good" then row.arc:SetTextColor(0.2, 1, 0.7)
         else row.arc:SetTextColor(0.5, 0.5, 0.5) end
         ApplyRowVisualState(row, e, i)
     end

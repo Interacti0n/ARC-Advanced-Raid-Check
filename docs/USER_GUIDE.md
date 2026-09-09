@@ -3,6 +3,20 @@
 This guide covers normal installation and use of Advanced Raid Check. For the
 exact validation rules, follow the links in [Documentation map](#documentation-map).
 
+## Connection Health
+
+Hover the ARC cell for Home/World latency, averaged FPS, ARC version and report
+age. The existing Yes/Old/New text remains; its color reflects connection health.
+Green: both latencies up to 150 ms and FPS at least 30. Yellow: latency above
+150 ms or FPS below 30. Red: latency above 300 ms or FPS below 15. Reports older
+than 30 seconds turn yellow and older than 45 seconds red. Stale reports do not
+prove a disconnect. Missing data and offline players are gray; known poor values
+can still color a partial report. No alerts or readiness blockers are added.
+
+FPS is sampled once per second and averaged between 15-second updates. Values
+travel with existing ARC reports and are reported by each player's client.
+Older clients cannot supply these measurements. The first sample is instantaneous.
+
 ## Installation and updates
 
 1. Put the `ARC` directory in `World of Warcraft/Interface/AddOns/`.

@@ -79,3 +79,12 @@ WoWSims-derived catalog notice is embedded in `ARC_Gear.lua`, so the required
 notice remains in the minimal package.
 
 See [Release checklist](RELEASE_CHECKLIST.md) for packaging and publishing.
+# Connection-health reporting (1.9.0)
+
+Core samples FPS at most once per second and publishes its interval average plus
+guarded Home/World latency reads every 15 seconds. The cached H1 extension follows
+F1 in readiness messages: H1^homeMs^worldMs^fps; -1 denotes unavailable values.
+Existing sender binding, send throttling and the 255-byte guard still apply.
+Older peers ignore trailing fields. Invalid values are discarded, and a report
+without H1 clears previous remote health data. Measurements remain in memory.
+Only the ARC cell color and its dedicated tooltip consume this data.

@@ -228,6 +228,8 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
     if elapsedAccum < ARC.REFRESH_EVERY then return end
     elapsedAccum = 0
 
+    ARC:SampleConnectionHealth()
+
     -- Weapon imbues do not reliably generate UNIT_AURA. Refresh our readiness
     -- report even with the window closed; expiry bounds remote imbue trust.
     local lastCommAttempt = math.max(ARC.lastSelfBroadcast or 0, ARC.lastSelfBroadcastAttempt or 0)
