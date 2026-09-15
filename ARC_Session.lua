@@ -1,7 +1,7 @@
 local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Session.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 
-local INACTIVE_AFTER = 5
+local INACTIVE_AFTER = 10
 local TRASH_IDLE_END_AFTER = 6
 local TRASH_DEAD_END_AFTER = 1
 local SESSION_RETENTION = 14 * 24 * 60 * 60
@@ -444,11 +444,35 @@ function ARC:StartTrashCombat(enemyGUID)
     end
 end
 
+local function CreditTrashInterval(fullName, member, now, checkEligibility)
+    local lastActivity = ARC.sessionActivity and ARC.sessionActivity[fullName]
+    if not member or not lastActivity then return end
+    local interval = now - lastActivity
+    if interval < INACTIVE_AFTER then return end
+    if checkEligibility then
+        local eligible = false
+        for _, unit in ipairs(I.GetGroupUnits()) do
+            if UnitExists(unit) and I.GetUnitIdentity(unit) == fullName then
+                eligible = ((not UnitIsConnected) or UnitIsConnected(unit)) and
+                    ((not UnitIsDeadOrGhost) or not UnitIsDeadOrGhost(unit))
+                break
+            end
+        end
+        if not eligible then return end
+    end
+    ARC.sessionInactiveCredited = ARC.sessionInactiveCredited or {}
+    local credited = ARC.sessionInactiveCredited[fullName] or 0
+    member.trashInactiveSeconds = (member.trashInactiveSeconds or 0) + math.max(0, interval - credited)
+    ARC.sessionInactiveCredited[fullName] = math.max(credited, interval)
+    member.trashLongestInactiveSeconds = math.max(member.trashLongestInactiveSeconds or 0, interval)
+end
+
 function ARC:EndTrashCombat(endedAt)
     local session = self.activeSession
     if not session or not self.trashCombatStartedAt then return end
     endedAt = tonumber(endedAt) or self.trashLastEvidence or GetTime()
     endedAt = math.max(self.trashCombatStartedAt, endedAt)
+    self:AccumulateTrashInactivity(endedAt)
     session.trashCombats = session.trashCombats + 1
     session.trashCombatSeconds = session.trashCombatSeconds + (endedAt - self.trashCombatStartedAt)
     self.trashCombatStartedAt, self.trashLastTick, self.trashLastEvidence = nil, nil, nil
@@ -456,13 +480,10 @@ function ARC:EndTrashCombat(endedAt)
     self.sessionInactiveCredited = nil
 end
 
-function ARC:TickTrashInactivity()
+function ARC:AccumulateTrashInactivity(now)
     local session = self.activeSession
     if not session or not self.trashCombatStartedAt or self.currentEncounter then return end
-    local wallNow = GetTime()
-    -- Only advance to real combat-log evidence. The six-second anti-stuck
-    -- grace period must not become fake inactivity after a pack has ended.
-    local now = math.min(wallNow, self.trashLastEvidence or wallNow)
+    now = math.min(now, self.trashLastEvidence or now)
     local delta = math.max(0, now - (self.trashLastTick or now))
     self.trashLastTick = now
     for _, unit in ipairs(I.GetGroupUnits()) do
@@ -470,20 +491,10 @@ function ARC:TickTrashInactivity()
             ((not UnitIsDeadOrGhost) or not UnitIsDeadOrGhost(unit)) then
             local fullName = I.GetUnitIdentity(unit)
             local member = fullName and session.members[fullName]
-            local lastActivity = fullName and self.sessionActivity and self.sessionActivity[fullName]
             if member then
                 member.trashEligibleSeconds = (member.trashEligibleSeconds or 0) + delta
             end
-            if member and lastActivity and now - lastActivity >= INACTIVE_AFTER then
-                self.sessionInactiveCredited = self.sessionInactiveCredited or {}
-                if not self.sessionInactiveCredited[fullName] then
-                    member.trashInactiveSeconds = (member.trashInactiveSeconds or 0) + (now - lastActivity)
-                    self.sessionInactiveCredited[fullName] = true
-                else
-                    member.trashInactiveSeconds = (member.trashInactiveSeconds or 0) + delta
-                end
-                member.trashLongestInactiveSeconds = math.max(member.trashLongestInactiveSeconds or 0, now - lastActivity)
-            end
+            CreditTrashInterval(fullName, member, now)
         else
             local fullName = UnitExists(unit) and I.GetUnitIdentity(unit)
             if fullName and self.sessionActivity then
@@ -492,6 +503,13 @@ function ARC:TickTrashInactivity()
             end
         end
     end
+end
+
+function ARC:TickTrashInactivity()
+    if not self.activeSession or not self.trashCombatStartedAt or self.currentEncounter then return end
+    local wallNow = GetTime()
+    -- Never count the anti-stuck grace period beyond the last combat evidence.
+    self:AccumulateTrashInactivity(wallNow)
     if self.trashAllDeadAt and wallNow - self.trashAllDeadAt >= TRASH_DEAD_END_AFTER then
         self:EndTrashCombat(self.trashAllDeadAt)
     elseif self.trashLastEvidence and wallNow - self.trashLastEvidence >= TRASH_IDLE_END_AFTER then
@@ -870,6 +888,9 @@ function ARC:SessionCombatLog(...)
     if ACTIVE_EVENTS[subevent] and sourceMember and not sourceIsPet and self.trashCombatStartedAt and not self.currentEncounter then
         local fullName, member = sourceFullName, sourceMember
         if fullName and member then
+            -- Close the previous interval before overwriting its start time.
+            -- Accumulation is idempotent, even if a tick just credited it.
+            CreditTrashInterval(fullName, member, math.min(GetTime(), self.trashLastEvidence or GetTime()), true)
             self.sessionActivity = self.sessionActivity or {}
             self.sessionActivity[fullName] = GetTime()
             if self.sessionInactiveCredited then self.sessionInactiveCredited[fullName] = nil end

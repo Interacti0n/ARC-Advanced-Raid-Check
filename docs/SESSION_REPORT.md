@@ -66,12 +66,16 @@ less bonus detail without breaking the rest of the session.
 `trash inactive ~` is deliberately labelled as an estimate. A trash window
 starts when the combat log shows a real hostile exchange involving any group
 member, even when the local ARC user never enters combat. Each member then gets
-a five-second activity timer. Personal damage, healing, successful spell casts,
-interrupts, dispels and spell steals reset it. When five seconds elapse, all
-five seconds are credited retroactively and inactivity continues accumulating
+a ten-second activity timer. Personal damage, healing, successful spell casts,
+interrupts, dispels and spell steals reset it. When ten seconds elapse, all
+ten seconds are credited retroactively and inactivity continues accumulating
 until another qualifying event. Pet combat can prove that the pack is still
 alive, but deliberately does not reset its owner's personal timer. Dead and
 offline players do not accumulate this metric.
+
+Activity and pack end settle any uncredited interval before resetting it. Repeated
+updates add only the difference, never the same seconds twice. Shorter intervals
+are ignored. Existing saved totals are not recalculated by this update.
 
 Tracked enemy deaths close a finished pack promptly. If a death, evade or
 despawn event is unavailable, six seconds without real combat-log evidence
@@ -101,7 +105,7 @@ the Export tab and the normal operating-system copy shortcut.
 ## Live verification checklist
 
 1. Start a grouped session, add/remove a member and verify their attendance.
-2. Enter trash combat, remain inactive for over five seconds, act, and verify the
+2. Enter trash combat, remain inactive for over ten seconds, act, and verify the
    timer resets while preserving the already accumulated interval.
 3. Repeat with a healer on harmless trash and a hunter pet to understand the
    estimate and confirm that pet-only activity does not credit its owner.

@@ -68,7 +68,14 @@ and [GitHub CLI upload documentation](https://cli.github.com/manual/gh_release_u
 A local `candidate` ZIP is not a published release or proof of in-game testing.
 Do not label the version verified on the server until the live checklist passes.
 
-## Current 1.9.0 local preflight — 2026-09-09
+## Current 1.9.1 local preflight — 2026-09-15
+
+- 140 mocked regression tests passed, including fractional trash intervals,
+  repeated accumulation, pack closure, short packs and stuck-combat cleanup.
+- Stale-TOC checks, nine release-tooling tests and diff checks passed.
+- Live raid verification remains pending; no release published by this preflight.
+
+## Previous 1.9.0 local preflight — 2026-09-09
 
 - 139 mocked ARC regression tests passed, including connection sampling, report expiry and inspect fallback, sender validation, consumable hover failures, pending profession gems and separate identical loot awards.
 - The stale-TOC startup/event/update/command/raid-UI suite passed.

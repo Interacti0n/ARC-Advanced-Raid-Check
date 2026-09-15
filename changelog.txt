@@ -1,3 +1,9 @@
+v1.9.1 CHANGES
+  - Restored a ten-second trash inactivity threshold, including the initial ten
+    seconds once reached; personal periodic effects and auto-attacks still count.
+  - Settled inactivity on player activity and pack end without losing fractional
+    intervals or counting previously credited time twice.
+
 v1.9.0 CHANGES
   - Added Connection Health through the existing ARC column: color reflects
     latency, averaged FPS and report age; hover shows values and ARC version.

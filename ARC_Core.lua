@@ -79,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.9.0"
+ARC.VERSION       = "1.9.1"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.COMM_MAX_BYTES = 255                   -- legacy MoP addon-message payload limit

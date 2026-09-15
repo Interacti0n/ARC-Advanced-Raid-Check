@@ -107,7 +107,7 @@ Remote durability is exact only when self-reported by that player's ARC. ARC
 does not estimate it from deaths or repair costs.
 
 Session trash inactivity is intentionally approximate. It measures the absence
-of recorded combat participation after the configured five-second threshold; it
+of recorded combat participation after the ten-second threshold; it
 is not proof of real-world AFK behavior. See [Session reports](SESSION_REPORT.md).
 # Remote report freshness
 

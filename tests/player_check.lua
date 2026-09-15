@@ -2152,12 +2152,12 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
             end
         end
         KeepTrashActive(12, "NPC1")
-        assert(member.trashInactiveSeconds == 12, "Crossing 5s must retroactively include the full inactive interval")
+        assert(member.trashInactiveSeconds == 12, "Crossing 10s must retroactively include the full inactive interval")
         ARC:SessionCombatLog(now, "SPELL_CAST_SUCCESS", false, "A", "Alice", 0, 0, nil, nil)
         KeepTrashActive(4, "NPC1")
         assert(member.trashInactiveSeconds == 12, "Activity resets the inactivity timer")
         KeepTrashActive(2, "NPC1")
-        assert(member.trashInactiveSeconds == 18, "Crossing 5s must also include the first five seconds after activity")
+        assert(member.trashInactiveSeconds == 12, "Six seconds must stay below the ten-second threshold")
         KeepTrashActive(5, "NPC1")
         assert(member.trashInactiveSeconds == 23)
         ARCEventFrame.scripts.OnEvent(ARCEventFrame, "PLAYER_REGEN_ENABLED")
@@ -2170,12 +2170,12 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
         units.partypet1 = { guid = "PET-A", name = "Wolf", online = true, visible = true, isPlayer = false }
         ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "A", "Alice", 0, 0, "NPC2", "Trash Mob")
         local lastPlayerActivity = ARC.sessionActivity["Alice-Realm"]
-        for _ = 1, 6 do
+        for _ = 1, 10 do
             now = now + 1
             ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, "PET-A", "Wolf", 0, 0, "NPC2", "Trash Mob")
             ARCSessionEventFrame.scripts.OnUpdate(ARCSessionEventFrame, 1.1)
         end
-        assert(member.trashInactiveSeconds == 29, "Pet-only fighting must not hide owner inactivity")
+        assert(member.trashInactiveSeconds == 33, "Pet-only fighting must not hide owner inactivity")
         assert(ARC.sessionActivity["Alice-Realm"] == lastPlayerActivity, "Pet events must not count as owner activity")
         ARC:SessionCombatLog(now, "UNIT_DIED", false, nil, nil, 0, 0, "NPC2", "Trash Mob")
         now = now + 1
@@ -2199,8 +2199,8 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
         assert(ARC:EndRaidSession() and #ARC_DB.sessions == 1)
         local report = ARC:GetSessionReportText()
         assert(report:find("Siege of Orgrimmar", 1, true) and report:find("Sha of Pride | KILL", 1, true))
-        assert(not report:find("AFK flag", 1, true) and report:find("trash idle 29s / 100%", 1, true))
-        assert(report:find("estimated after 5s", 1, true))
+        assert(not report:find("AFK flag", 1, true) and report:find("trash idle 33s / 100%", 1, true))
+        assert(report:find("estimated after 10s", 1, true))
         ARC:ShowSessionReport()
         assert(ARC.sessionFrame:IsShown() and ARC.sessionFrame.text:GetText():find("ARC RAID SESSION REPORT", 1, true))
         assert(ARC.sessionFrame.summary:GetText():find("Session 1 / 1", 1, true))
@@ -2518,5 +2518,43 @@ test("identical ordinary awards stay separate from bonus-roll reports", function
     ARC:RecordSessionLoot("Alice", link, 1, "item", context, "comm")
     assert(#ARC.activeSession.loot == 3 and ARC.activeSession.loot[3].itemLink == link)
     ARC.activeSession, ARC.RefreshSessionReport = saved, refresh
+end)
+test("trash intervals close on activity and pack end without double counting", function()
+    menuStart(); ARC:Hide(); units.party1 = alice
+    ARC.activeSession, ARC_DB.activeSession, ARC.currentEncounter = nil, nil, nil
+    ARC.trashCombatStartedAt = nil
+    withGlobals({ IsInGroup=function() return true end, GetNumGroupMembers=function() return 2 end }, function()
+        assert(ARC:StartRaidSession())
+        local member = ARC.activeSession.members["Alice-Realm"]
+        local function damage(name)
+            ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, name == "Alice" and "A" or "SELF", name, 0, 0, "NPC-TEST", "Trash")
+        end
+        local function near(actual, expected) assert(math.abs(actual - expected) < 0.0001, tostring(actual) .. " ~= " .. expected) end
+        damage("Alice")
+        now = now + 9.8; damage("Me"); ARC:TickTrashInactivity()
+        near(member.trashInactiveSeconds, 0)
+        now = now + 0.5; damage("Alice")
+        near(member.trashInactiveSeconds, 10.3)
+        ARC:TickTrashInactivity(); ARC:TickTrashInactivity()
+        near(member.trashInactiveSeconds, 10.3)
+        now = now + 10.1; damage("Me"); ARC:TickTrashInactivity()
+        near(member.trashInactiveSeconds, 20.4)
+        now = now + 0.5; damage("Alice"); ARC:TickTrashInactivity()
+        near(member.trashInactiveSeconds, 20.9)
+        now = now + 10.2; damage("Me")
+        ARC:EndTrashCombat(now)
+        near(member.trashInactiveSeconds, 31.1)
+        near(member.trashEligibleSeconds, 31.1)
+        ARC:TickTrashInactivity(); near(member.trashInactiveSeconds, 31.1)
+        damage("Alice")
+        now = now + 9; damage("Me"); ARC:EndTrashCombat(now)
+        near(member.trashInactiveSeconds, 31.1)
+        damage("Alice")
+        now = now + 7; ARC:TickTrashInactivity()
+        assert(not ARC.trashCombatStartedAt)
+        near(member.trashInactiveSeconds, 31.1)
+        ARC:EndRaidSession()
+    end)
+    units.party1 = nil
 end)
 print("Passed " .. passed .. " ARC regression tests")
