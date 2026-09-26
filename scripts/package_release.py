@@ -32,7 +32,7 @@ def manifest(root, tag=""):
     modules = [line.strip() for line in toc.splitlines() if line.strip() and not line.lstrip().startswith("#")]
     if not modules or modules[0] != "ARC_Core.lua" or modules[-1] != "ARC.lua" or "ARC_PlayerCheck.lua" not in modules:
         raise ValueError("Invalid ARC.toc module order or missing player-check module")
-    if len(modules) != len(set(modules)) or any(not re.fullmatch(r"ARC(?:_[A-Za-z]+)?\.lua", name) for name in modules):
+    if len(modules) != len(set(modules)) or any(not re.fullmatch(r"ARC(?:_[A-Za-z]+)*\.lua", name) for name in modules):
         raise ValueError("TOC must contain unique ARC Lua filenames, not paths")
     # The install ZIP deliberately excludes README, docs, tests and build tooling.
     # The third-party catalog's MIT notice is also embedded in ARC_Gear.lua.

@@ -2,6 +2,14 @@ local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Options.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local Round = I.Round
 local SetFrameShown = I.SetFrameShown
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then
+        local ok, value = pcall(string.format, key, ...)
+        if ok then return value end
+    end
+    return key
+end
 
 function ARC:SetManualMode(enabled)
     ARC_DB.manualMode = enabled and true or false
@@ -11,7 +19,7 @@ end
 function ARC:SetMinimumItemLevel(text)
     local value = tonumber(text)
     if not value or value < 400 or value > 600 or value ~= math.floor(value) then
-        return false, "Enter a whole number from 400 to 600."
+        return false, L("Enter a whole number from 400 to 600.")
     end
     if ARC_DB.minItemLevel ~= value then
         ARC_DB.minItemLevel = value
@@ -95,9 +103,9 @@ function ARC:CreateMinimapButton()
     btn:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:AddLine("ARC - " .. ARC.NAME)
-        GameTooltip:AddLine("Left-click: show/hide window", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Right-click: options", 0.8, 0.8, 0.8)
-        GameTooltip:AddLine("Drag: move this button", 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L("Left-click: show/hide window"), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L("Right-click: options"), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L("Drag: move this button"), 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     btn:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -140,30 +148,53 @@ function ARC:CreateOptionsPanel()
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     subtitle:SetWidth(500)
     subtitle:SetJustifyH("LEFT")
-    subtitle:SetText("Version " .. ARC.VERSION .. "  -  see /arc help for slash commands")
+    local languageLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    languageLabel:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -18)
+    local languageButton = CreateFrame("Button", "ARCOptionsLanguage", panel, "UIPanelButtonTemplate")
+    languageButton:SetSize(220, 24)
+    languageButton:SetPoint("TOPLEFT", languageLabel, "BOTTOMLEFT", -2, -6)
+    local languageMenu = CreateFrame("Frame", "ARCOptionsLanguageMenu", panel, "UIDropDownMenuTemplate")
+    local function LanguageName(code)
+        for _, choice in ipairs(ARC.LOCALE_CHOICES or {}) do
+            if choice.code == code then return L(choice.name) end
+        end
+        return code
+    end
+    languageButton:SetScript("OnClick", function(self)
+        if not ARC.GetLanguage or not ARC.SetLanguage then return end
+        local menu = {}
+        local selected = ARC:GetLanguage()
+        for _, choice in ipairs(ARC.LOCALE_CHOICES or {}) do
+            local code = choice.code
+            menu[#menu + 1] = {
+                text = L(choice.name), checked = selected == code,
+                func = function()
+                    ARC:SetLanguage(code)
+                    if CloseDropDownMenus then CloseDropDownMenus() end
+                end,
+            }
+        end
+        EasyMenu(menu, languageMenu, self, 0, 0, "MENU")
+    end)
 
     local manualCB = CreateFrame("CheckButton", "ARCOptionsManual", panel, "InterfaceOptionsCheckButtonTemplate")
-    manualCB:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", -2, -20)
-    SetCheckButtonText(manualCB, "Manual opening only (do not open ARC on ready checks)")
+    manualCB:SetPoint("TOPLEFT", languageButton, "BOTTOMLEFT", 0, -12)
     manualCB:SetScript("OnClick", function(self) ARC:SetManualMode(self:GetChecked()) end)
 
     local autohideCB = CreateFrame("CheckButton", "ARCOptionsAutoHide", panel, "InterfaceOptionsCheckButtonTemplate")
     autohideCB:SetPoint("TOPLEFT", manualCB, "BOTTOMLEFT", 0, -4)
-    SetCheckButtonText(autohideCB, "Auto-hide when you enter combat (the pull)")
     autohideCB:SetScript("OnClick", function(self)
         ARC_DB.autoHide = self:GetChecked() and true or false
     end)
 
     local lockCB = CreateFrame("CheckButton", "ARCOptionsLock", panel, "InterfaceOptionsCheckButtonTemplate")
     lockCB:SetPoint("TOPLEFT", autohideCB, "BOTTOMLEFT", 0, -4)
-    SetCheckButtonText(lockCB, "Lock window position (disable dragging)")
     lockCB:SetScript("OnClick", function(self)
         ARC_DB.locked = self:GetChecked() and true or false
     end)
 
     local minimapCB = CreateFrame("CheckButton", "ARCOptionsMinimap", panel, "InterfaceOptionsCheckButtonTemplate")
     minimapCB:SetPoint("TOPLEFT", lockCB, "BOTTOMLEFT", 0, -4)
-    SetCheckButtonText(minimapCB, "Show minimap button")
     minimapCB:SetScript("OnClick", function(self)
         ARC_DB.minimap.hide = not self:GetChecked()
         if ARC.minimapButton then
@@ -173,7 +204,6 @@ function ARC:CreateOptionsPanel()
 
     local autoSessionCB = CreateFrame("CheckButton", "ARCOptionsAutoSessions", panel, "InterfaceOptionsCheckButtonTemplate")
     autoSessionCB:SetPoint("TOPLEFT", minimapCB, "BOTTOMLEFT", 0, -4)
-    SetCheckButtonText(autoSessionCB, "Automatically track sessions inside raid instances")
     autoSessionCB:SetScript("OnClick", function(self)
         ARC_DB.autoSessions = self:GetChecked() and true or false
         if not ARC_DB.autoSessions and ARC.activeSession and ARC.activeSession.automatic and ARC.EndRaidSession then
@@ -187,7 +217,7 @@ function ARC:CreateOptionsPanel()
     scaleSlider:SetWidth(200)
     scaleSlider:SetMinMaxValues(0.6, 1.5)
     scaleSlider:SetValueStep(0.05)
-    SetSliderLabels(scaleSlider, "0.6", "1.5", "Window Scale")
+    SetSliderLabels(scaleSlider, "0.6", "1.5", L("Window Scale"))
 
     local scaleValueText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     scaleValueText:SetPoint("LEFT", scaleSlider, "RIGHT", 12, 0)
@@ -202,7 +232,6 @@ function ARC:CreateOptionsPanel()
 
     local ilvlLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     ilvlLabel:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -30)
-    ilvlLabel:SetText("Minimum Item Level")
     local ilvlInput = CreateFrame("EditBox", "ARCOptionsMinIlvl", panel, "InputBoxTemplate")
     ilvlInput:SetSize(80, 22)
     ilvlInput:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 4, -8)
@@ -212,16 +241,14 @@ function ARC:CreateOptionsPanel()
     local ilvlApply = CreateFrame("Button", "ARCOptionsMinIlvlApply", panel, "UIPanelButtonTemplate")
     ilvlApply:SetSize(70, 22)
     ilvlApply:SetPoint("LEFT", ilvlInput, "RIGHT", 12, 0)
-    ilvlApply:SetText("Apply")
     local ilvlMessage = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ilvlMessage:SetPoint("TOPLEFT", ilvlInput, "BOTTOMLEFT", -4, -8)
-    ilvlMessage:SetText("400-600. Enter or Apply to save; Escape to cancel.")
     local function ApplyItemLevel()
         local ok, reason = ARC:SetMinimumItemLevel(ilvlInput:GetText())
         if ok then
             ilvlInput:SetText(tostring(ARC_DB.minItemLevel))
             ilvlInput:ClearFocus()
-            ilvlMessage:SetText("Saved: " .. ARC_DB.minItemLevel)
+            ilvlMessage:SetText(L("Saved: %d", ARC_DB.minItemLevel))
         else
             ilvlMessage:SetText(reason)
         end
@@ -232,14 +259,13 @@ function ARC:CreateOptionsPanel()
     ilvlInput:SetScript("OnEscapePressed", function(self)
         self:SetText(tostring(ARC_DB.minItemLevel))
         self:ClearFocus()
-        ilvlMessage:SetText("Unchanged: " .. ARC_DB.minItemLevel)
+        ilvlMessage:SetText(L("Unchanged: %d", ARC_DB.minItemLevel))
         ilvlMessage:SetTextColor(0.9, 0.9, 0.9)
     end)
 
     local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     resetBtn:SetSize(160, 22)
     resetBtn:SetPoint("TOPLEFT", ilvlMessage, "BOTTOMLEFT", -6, -16)
-    resetBtn:SetText("Reset Window Position")
     resetBtn:SetScript("OnClick", function()
         ARC_DB.point = { "CENTER", "UIParent", "CENTER", 0, 150 }
         if ARC.frame then
@@ -251,13 +277,11 @@ function ARC:CreateOptionsPanel()
     local raidBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     raidBtn:SetSize(160, 22)
     raidBtn:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
-    raidBtn:SetText("Raid Setup Checks")
     raidBtn:SetScript("OnClick", function() ARC:OpenRaidOptions() end)
 
     local sessionBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     sessionBtn:SetSize(130, 22)
     sessionBtn:SetPoint("LEFT", raidBtn, "RIGHT", 12, 0)
-    sessionBtn:SetText("Session Report")
     sessionBtn:SetScript("OnClick", function()
         if ARC.ShowSessionReport then ARC:ShowSessionReport() end
     end)
@@ -266,7 +290,24 @@ function ARC:CreateOptionsPanel()
     hint:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 6, -20)
     hint:SetWidth(480)
     hint:SetJustifyH("LEFT")
-    hint:SetText("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report tracks attendance, pulls, deaths and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified.")
+    local function RefreshText()
+        subtitle:SetText(L("Version %s  -  see /arc help for slash commands", ARC.VERSION))
+        languageLabel:SetText(L("Language"))
+        local preference = ARC.GetLanguage and ARC:GetLanguage() or "auto"
+        languageButton:SetText(LanguageName(preference))
+        SetCheckButtonText(manualCB, L("Manual opening only (do not open ARC on ready checks)"))
+        SetCheckButtonText(autohideCB, L("Auto-hide when you enter combat (the pull)"))
+        SetCheckButtonText(lockCB, L("Lock window position (disable dragging)"))
+        SetCheckButtonText(minimapCB, L("Show minimap button"))
+        SetCheckButtonText(autoSessionCB, L("Automatically track sessions inside raid instances"))
+        SetSliderLabels(scaleSlider, "0.6", "1.5", L("Window Scale"))
+        ilvlLabel:SetText(L("Minimum Item Level"))
+        ilvlApply:SetText(L("Apply"))
+        resetBtn:SetText(L("Reset Window Position"))
+        raidBtn:SetText(L("Raid Setup Checks"))
+        sessionBtn:SetText(L("Session Report"))
+        hint:SetText(L("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report tracks attendance, pulls, deaths and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified."))
+    end
 
     panel.refresh = function()
         manualCB:SetChecked(ARC_DB.manualMode)
@@ -277,8 +318,9 @@ function ARC:CreateOptionsPanel()
         scaleSlider:SetValue(ARC_DB.scale or 1.0)
         ilvlInput:SetText(tostring(ARC_DB.minItemLevel or 450))
         ilvlInput:ClearFocus()
-        ilvlMessage:SetText("400-600. Enter or Apply to save; Escape to cancel.")
+        ilvlMessage:SetText(L("400-600. Enter or Apply to save; Escape to cancel."))
         ilvlMessage:SetTextColor(0.9, 0.9, 0.9)
+        RefreshText()
     end
 
     if InterfaceOptions_AddCategory then
@@ -286,24 +328,23 @@ function ARC:CreateOptionsPanel()
     end
 
     ARC.optionsPanel = panel
+    if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(panel, panel.refresh) end
+    panel.refresh()
     return panel
 end
 
 function ARC:CreateRaidOptions()
     if self.raidOptionsPanel then return self.raidOptionsPanel end
     local panel = CreateFrame("Frame", "ARCRaidOptionsPanel", UIParent)
-    panel.name, panel.parent = "Raid setup", "ARC"
+    panel.name, panel.parent = L("Raid setup"), "ARC"
     local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
-    title:SetText("ARC - Expected Raid Setup")
     local explanation = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     explanation:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -12)
     explanation:SetWidth(480)
     explanation:SetJustifyH("LEFT")
-    explanation:SetText("Choose your expected raid mode (including size) and loot method. A mismatch makes the ARC banner RED. These checks never change the actual raid settings or send chat. Changes here save immediately.")
     local enabled = CreateFrame("CheckButton", "ARCRaidSetupEnabled", panel, "InterfaceOptionsCheckButtonTemplate")
     enabled:SetPoint("TOPLEFT", explanation, "BOTTOMLEFT", -2, -16)
-    SetCheckButtonText(enabled, "Check raid setup")
     enabled:SetScript("OnClick", function(self)
         ARC_DB.raidSetup.enabled = self:GetChecked() and true or false
         ARC:Render()
@@ -317,7 +358,7 @@ function ARC:CreateRaidOptions()
             local menu = {}
             for _, value in ipairs(values) do
                 local chosen = value
-                menu[#menu + 1] = { text = labels[value], checked = ARC_DB.raidSetup[field] == value,
+                menu[#menu + 1] = { text = L(labels[value]), checked = ARC_DB.raidSetup[field] == value,
                     func = function()
                         ARC_DB.raidSetup[field] = chosen
                         if CloseDropDownMenus then CloseDropDownMenus() end
@@ -334,14 +375,22 @@ function ARC:CreateRaidOptions()
     note:SetPoint("TOPLEFT", panel.loot, "BOTTOMLEFT", 0, -18)
     note:SetWidth(480)
     note:SetJustifyH("LEFT")
-    note:SetText("Inside a raid, ARC checks the actual instance difficulty. Outside it, ARC checks the selected raid difficulty. 10/25 is the mode's capacity, not the number of players currently invited. Not checked skips only that setting; unavailable data never passes.")
+    local function RefreshRaidText()
+        panel.name = L("Raid setup")
+        title:SetText(L("ARC - Expected Raid Setup"))
+        explanation:SetText(L("Choose your expected raid mode (including size) and loot method. A mismatch makes the ARC banner RED. These checks never change the actual raid settings or send chat. Changes here save immediately."))
+        SetCheckButtonText(enabled, L("Check raid setup"))
+        note:SetText(L("Inside a raid, ARC checks the actual instance difficulty. Outside it, ARC checks the selected raid difficulty. 10/25 is the mode's capacity, not the number of players currently invited. Not checked skips only that setting; unavailable data never passes."))
+    end
     panel.refresh = function()
         enabled:SetChecked(ARC_DB.raidSetup.enabled)
-        panel.mode:SetText("Mode / size: " .. ARC.RAID_DIFFICULTIES[ARC_DB.raidSetup.difficulty])
-        panel.loot:SetText("Loot: " .. ARC.LOOT_METHODS[ARC_DB.raidSetup.loot])
+        panel.mode:SetText(L("Mode / size: %s", L(ARC.RAID_DIFFICULTIES[ARC_DB.raidSetup.difficulty])))
+        panel.loot:SetText(L("Loot: %s", L(ARC.LOOT_METHODS[ARC_DB.raidSetup.loot])))
+        RefreshRaidText()
     end
     if InterfaceOptions_AddCategory then InterfaceOptions_AddCategory(panel) end
     panel.refresh()
+    if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(panel, panel.refresh) end
     self.raidOptionsPanel = panel
     return panel
 end

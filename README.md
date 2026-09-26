@@ -13,6 +13,7 @@ answering ready checks automatically.
 - a clear **READY TO PULL**, **NOT READY** or **CHECK INCOMPLETE** verdict
 - standalone **ARC Check** for a targeted player, even outside your group
 - automatic raid-session reports with players, bosses, trash inactivity and loot history
+- English, Slovak and Czech interface with a per-character language choice
 - 25-player scrolling roster and automatic optional ElvUI styling
 
 ## Install
@@ -38,6 +39,10 @@ ElvUI support is detected automatically.
 By default ARC opens when a ready check starts. Enable **Manual opening only**
 in Options if you want to open it yourself. The **Ready** and **Not Ready**
 buttons answer only your own active ready check.
+
+ARC follows an English (`enGB`/`enUS`) game client by default. Slovak and
+Czech can be selected in Options; the choice is remembered separately for each
+character.
 
 Raid sessions start automatically inside raid instances and finish after you
 remain outside for 30 seconds. This can be disabled in Options; completed

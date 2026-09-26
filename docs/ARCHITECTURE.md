@@ -9,6 +9,9 @@ other library.
 | File | Responsibility |
 | --- | --- |
 | `ARC_Core.lua` | Database defaults, roster, aura scanning and addon communication |
+| `ARC_Localization.lua` | English fallback, locale selection and live UI refresh |
+| `ARC_Locales_SK.lua` | Slovak translations |
+| `ARC_Locales_CZ.lua` | Czech translations |
 | `ARC_Gear.lua` | Upgrade-aware item level, item parsing and configurable gear rules |
 | `ARC_Inspect.lua` | Inspect queue, specialization and remote equipment fallback |
 | `ARC_UI.lua` | Main roster, tooltips, verdict banner and announcements |
@@ -45,6 +48,12 @@ Each migration advances the schema only after success and must be idempotent so
 an interrupted step can safely run again. Unknown fields and session history
 are preserved. If an older addon sees a newer schema, it keeps that version and
 skips migration instead of downgrading or replacing the database.
+
+The language override is intentionally separate in the per-character
+`ARC_CharDB.language` field. `auto` follows the game client when ARC has a
+matching locale and otherwise falls back to canonical `enGB`; `enUS` shares
+the same maintained English strings. Locale tables may omit a key safely
+because the English source string is always used as the fallback.
 
 ## Communication model
 

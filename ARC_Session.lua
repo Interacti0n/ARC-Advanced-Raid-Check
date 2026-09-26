@@ -1,9 +1,19 @@
 local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Session.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then
+        local ok, value = pcall(string.format, key, ...)
+        if ok then return value end
+    end
+    return key
+end
 
 local INACTIVE_AFTER = 10
 local TRASH_IDLE_END_AFTER = 6
 local TRASH_DEAD_END_AFTER = 1
+local BOSS_RESET_MAX_DURATION = 60
+local BOSS_RESET_MAX_DEATHS = 5
 local SESSION_RETENTION = 14 * 24 * 60 * 60
 local AUTO_EXIT_GRACE = 30
 local MAX_READY_CHECKS = 100
@@ -150,7 +160,7 @@ function ARC:InitSessionTracker()
         end
         self.sessionActivity = {}
         self:UpdateSessionRoster()
-        print("|cff33ff99ARC:|r resumed the active raid session after reload.")
+        print("|cff33ff99ARC:|r " .. L("Resumed the active raid session after reload."))
     end
 end
 
@@ -197,11 +207,11 @@ end
 
 function ARC:StartRaidSession(automatic)
     if self.activeSession then
-        print("|cff33ff99ARC:|r a raid session is already active.")
+        print("|cff33ff99ARC:|r " .. L("A raid session is already active."))
         return false
     end
     if not IsInGroup() and not IsInRaid() then
-        print("|cff33ff99ARC:|r join a group or raid before starting a session.")
+        print("|cff33ff99ARC:|r " .. L("Join a group or raid before starting a session."))
         return false
     end
     local instance, difficulty, _, instanceID = CurrentLocation()
@@ -217,7 +227,7 @@ function ARC:StartRaidSession(automatic)
     self.lastLootBoss, self.pendingBonusRoll = nil, nil
     ARC_DB.activeSession = session
     self:UpdateSessionRoster()
-    print("|cff33ff99ARC:|r raid session started: " .. instance .. ".")
+    print("|cff33ff99ARC:|r " .. L("Raid session started: %s.", instance))
     self:RefreshSessionReport()
     return true
 end
@@ -238,7 +248,7 @@ end
 function ARC:EndRaidSession(reason, endedAt)
     local session = self.activeSession
     if not session then
-        print("|cff33ff99ARC:|r no raid session is active.")
+        print("|cff33ff99ARC:|r " .. L("No raid session is active."))
         return false
     end
     if self.trashCombatStartedAt then self:EndTrashCombat() end
@@ -262,7 +272,7 @@ function ARC:EndRaidSession(reason, endedAt)
         local inRaid, key = RaidInstanceState()
         if inRaid then ARC_DB.autoSessionSuppressedKey = key end
     end
-    print("|cff33ff99ARC:|r raid session ended and saved.")
+    print("|cff33ff99ARC:|r " .. L("Raid session ended and saved."))
     self:RefreshSessionReport(session)
     return true
 end
@@ -339,7 +349,7 @@ function ARC:DeleteRaidSession(session)
                 end
                 self:RefreshSessionReport()
             end
-            print("|cff33ff99ARC:|r saved raid session deleted.")
+            print("|cff33ff99ARC:|r " .. L("Saved raid session deleted."))
             return true
         end
     end
@@ -351,7 +361,7 @@ function ARC:RequestDeleteRaidSession(session)
     if not StaticPopupDialogs or not StaticPopup_Show then return false end
     if not StaticPopupDialogs.ARC_DELETE_SESSION_REPORT then
         StaticPopupDialogs.ARC_DELETE_SESSION_REPORT = {
-            text = "Delete this saved ARC session report?\n\n%s",
+            text = L("Delete this saved ARC session report?\n\n%s"),
             button1 = DELETE or "Delete",
             button2 = CANCEL or "Cancel",
             OnAccept = function(_, data)
@@ -398,6 +408,15 @@ function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, group
     pull.endedAt = WallTime()
     pull.duration = math.max(0, GetTime() - (pull.startedUptime or GetTime()))
     pull.success = tonumber(success) == 1
+    if not pull.success and pull.duration <= BOSS_RESET_MAX_DURATION then
+        local deadPlayers = {}
+        for _, death in ipairs(pull.deaths or {}) do
+            if death.name then deadPlayers[death.name] = true end
+        end
+        local deathCount = 0
+        for _ in pairs(deadPlayers) do deathCount = deathCount + 1 end
+        pull.reset = deathCount <= BOSS_RESET_MAX_DEATHS
+    end
     self.currentEncounter = nil
     if pull.success then
         self.lastLootBoss = {
@@ -947,6 +966,13 @@ local function BossKey(pull, fallback)
     return pull.name or tostring(fallback or "Unknown")
 end
 
+local function PullResult(pull, interruptedLabel)
+    if pull.success then return "KILL" end
+    if pull.interrupted then return interruptedLabel or "INTERRUPTED" end
+    if pull.reset then return "RESET" end
+    return "WIPE"
+end
+
 local function TrashCombatSeconds(session)
     local seconds = session.trashCombatSeconds or 0
     if session == ARC.activeSession and ARC.trashCombatStartedAt then
@@ -987,17 +1013,17 @@ local function DeathBreakdown(member)
 end
 
 local function LootSource(entry)
-    if entry.sourceType == "boss" then return entry.bossName or "Unknown boss" end
-    if entry.sourceType == "trash" then return "Trash" end
-    return "Unknown source"
+    if entry.sourceType == "boss" then return entry.bossName or L("Unknown boss") end
+    if entry.sourceType == "trash" then return L("Trash") end
+    return L("Unknown source")
 end
 
 local function LootTags(entry)
     local tags = {}
     if entry.difficultyTag then tags[#tags + 1] = entry.difficultyTag end
     if entry.forgedTag then tags[#tags + 1] = entry.forgedTag end
-    if entry.bonusResult == "item" then tags[#tags + 1] = "Bonus" end
-    if entry.sourceType == "trash" then tags[#tags + 1] = "Epic trash" end
+    if entry.bonusResult == "item" then tags[#tags + 1] = L("Bonus") end
+    if entry.sourceType == "trash" then tags[#tags + 1] = L("Epic trash") end
     return table.concat(tags, " / ")
 end
 
@@ -1016,17 +1042,17 @@ local function LootCounts(session, playerKey)
 end
 
 local function BuildReport(session)
-    if not session then return "No raid session recorded yet." end
+    if not session then return L("No raid session recorded yet.") end
     ARC:ResolveSessionLoot(session)
     local ended = session.endedAt or WallTime()
     local _, uniqueKills, bossSeconds = SessionStats(session)
     local lines = {
-        "ARC RAID SESSION REPORT",
-        string.format("%s | difficulty %s | %s", session.instance or "Unknown", session.difficulty or "?", session.endedAt and "FINISHED" or "ACTIVE"),
-        string.format("%s - %s | duration %s", DisplayTime(session.startedAt), session.endedAt and DisplayTime(session.endedAt) or "ACTIVE", FormatDuration(ended - (session.startedAt or ended))),
-        string.format("Bosses killed: %d | pulls: %d | ready checks: %d", uniqueKills, #(session.pulls or {}), ReadyCheckCount(session)),
-        string.format("Boss combat: %s | trash combat: %s", FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(session))),
-        "", "PLAYERS",
+        L("ARC RAID SESSION REPORT"),
+        L("%s | difficulty %s | %s", session.instance or L("Unknown"), session.difficulty or "?", L(session.endedAt and "FINISHED" or "ACTIVE")),
+        L("%s - %s | duration %s", DisplayTime(session.startedAt), session.endedAt and DisplayTime(session.endedAt) or L("ACTIVE"), FormatDuration(ended - (session.startedAt or ended))),
+        L("Bosses killed: %d | pulls: %d | ready checks: %d", uniqueKills, #(session.pulls or {}), ReadyCheckCount(session)),
+        L("Boss combat: %s | trash combat: %s", FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(session))),
+        "", L("PLAYERS"),
     }
     local members = {}
     for _, member in pairs(session.members or {}) do members[#members + 1] = member end
@@ -1034,22 +1060,22 @@ local function BuildReport(session)
     for _, member in ipairs(members) do
         local _, attendance, offline, inactive, inactivePct = MemberMetrics(session, member, ended)
         local deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths = DeathBreakdown(member)
-        lines[#lines + 1] = string.format("%s | attendance %d%% | offline %s | trash idle %s%s | pulls %d | deaths %d (boss %d, trash %d, other %d, first %d)",
+        lines[#lines + 1] = L("%s | attendance %d%% | offline %s | trash idle %s%s | pulls %d | deaths %d (boss %d, trash %d, other %d, first %d)",
             member.name or member.fullName, attendance, FormatDuration(offline), FormatDuration(inactive), inactivePct and (" / " .. inactivePct .. "%") or " / -",
             member.pulls or 0, deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths)
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "BOSSES"
-    if #(session.pulls or {}) == 0 then lines[#lines + 1] = "No encounter events recorded." end
+    lines[#lines + 1] = L("BOSSES")
+    if #(session.pulls or {}) == 0 then lines[#lines + 1] = L("No encounter events recorded.") end
     for index, pull in ipairs(session.pulls or {}) do
-        local death = pull.firstDeath and (" | first death " .. pull.firstDeath.name .. " @ " .. FormatDuration(pull.firstDeath.at)) or ""
-        local result = pull.success and "KILL" or (pull.interrupted and "INTERRUPTED" or "WIPE")
+        local death = pull.firstDeath and L(" | first death %s @ %s", pull.firstDeath.name, FormatDuration(pull.firstDeath.at)) or ""
+        local result = L(PullResult(pull))
         lines[#lines + 1] = string.format("%d. %s | %s | %s%s", index, pull.name or "Unknown", result, FormatDuration(pull.duration or 0), death)
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = "LOOT"
+    lines[#lines + 1] = L("LOOT")
     local bossLoot, bonusItems, bonusEmpty, trashLoot = LootCounts(session)
-    lines[#lines + 1] = string.format("Boss items: %d | bonus items: %d | empty bonus rolls: %d | trash epics: %d",
+    lines[#lines + 1] = L("Boss items: %d | bonus items: %d | empty bonus rolls: %d | trash epics: %d",
         bossLoot, bonusItems, bonusEmpty, trashLoot)
     local lootMembers = {}
     for key, member in pairs(session.members or {}) do lootMembers[#lootMembers + 1] = { key=key, member=member } end
@@ -1066,8 +1092,8 @@ local function BuildReport(session)
         if #playerLoot > 0 then
             lines[#lines + 1] = member.name or key
             for _, entry in ipairs(playerLoot) do
-                local reward = entry.bonusResult == "none" and "Bonus roll - no item" or
-                    (entry.itemLink or entry.itemName or ("Item " .. tostring(entry.itemID or "?")))
+                local reward = entry.bonusResult == "none" and L("Bonus roll - no item") or
+                    (entry.itemLink or entry.itemName or L("Item %s", tostring(entry.itemID or "?")))
                 local tags = LootTags(entry)
                 lines[#lines + 1] = string.format("  %s | %s | %s%s",
                     date and date("%H:%M", entry.at or 0) or tostring(entry.at or "?"), LootSource(entry), reward,
@@ -1076,7 +1102,7 @@ local function BuildReport(session)
         end
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = string.format("Trash idle is estimated after %ds without personal activity; pet-only activity never credits its owner.", INACTIVE_AFTER)
+    lines[#lines + 1] = L("Trash idle is estimated after %ds without personal activity; pet-only activity never credits its owner.", INACTIVE_AFTER)
     return table.concat(lines, "\n")
 end
 
@@ -1123,7 +1149,12 @@ end
 
 local function EnsureHeader(frame, kind, columns)
     local key = kind .. "Header"
-    if frame[key] then return frame[key] end
+    if frame[key] then
+        for index, button in ipairs(frame[key].buttons or {}) do
+            button.label:SetText(L(columns[index].label))
+        end
+        return frame[key]
+    end
     local header = CreateFrame("Frame", nil, frame[kind .. "Child"])
     header:SetSize(645, 24)
     header.bg = header:CreateTexture(nil, "BACKGROUND")
@@ -1137,7 +1168,7 @@ local function EnsureHeader(frame, kind, columns)
         local label = button:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
         label:SetAllPoints()
         label:SetJustifyH(index == 1 and "LEFT" or "CENTER")
-        label:SetText(column.label)
+        label:SetText(L(column.label))
         button.label = label
         if kind == "players" then
             local sortColumn = column.key
@@ -1174,13 +1205,13 @@ local function EnsurePlayerRow(frame, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:ClearLines()
         local deaths, bossDeaths, trashDeaths, otherDeaths, firstDeaths = DeathBreakdown(member)
-        GameTooltip:AddLine(member.name or member.fullName or "Player", 1, 1, 1)
-        GameTooltip:AddLine("Deaths: " .. deaths, 0.9, 0.9, 0.9)
-        GameTooltip:AddLine("Boss: " .. bossDeaths, 0.85, 0.85, 0.85)
-        GameTooltip:AddLine("Trash: " .. trashDeaths, 0.85, 0.85, 0.85)
-        GameTooltip:AddLine("Other / unknown: " .. otherDeaths, 0.85, 0.85, 0.85)
-        GameTooltip:AddLine("First deaths: " .. firstDeaths, 0.85, 0.85, 0.85)
-        GameTooltip:AddLine("Longest trash idle: " .. FormatDuration(member.trashLongestInactiveSeconds or 0), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(member.name or member.fullName or L("Player"), 1, 1, 1)
+        GameTooltip:AddLine(L("Deaths: %d", deaths), 0.9, 0.9, 0.9)
+        GameTooltip:AddLine(L("Boss: %d", bossDeaths), 0.85, 0.85, 0.85)
+        GameTooltip:AddLine(L("Trash: %d", trashDeaths), 0.85, 0.85, 0.85)
+        GameTooltip:AddLine(L("Other / unknown: %d", otherDeaths), 0.85, 0.85, 0.85)
+        GameTooltip:AddLine(L("First deaths: %d", firstDeaths), 0.85, 0.85, 0.85)
+        GameTooltip:AddLine(L("Longest trash idle: %s", FormatDuration(member.trashLongestInactiveSeconds or 0)), 0.8, 0.8, 0.8)
         GameTooltip:Show()
     end)
     deathHover:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1210,7 +1241,7 @@ local function RenderPlayers(frame, session)
     local sortKey, descending = frame.playerSort or "name", frame.playerSortDesc
     for index, button in ipairs(header.buttons or {}) do
         local column = PLAYER_COLUMNS[index]
-        button.label:SetText(column.label .. (column.key == sortKey and (descending and " v" or " ^") or ""))
+        button.label:SetText(L(column.label) .. (column.key == sortKey and (descending and " v" or " ^") or ""))
     end
     table.sort(rows, function(a, b)
         local av, bv = a.values[sortKey], b.values[sortKey]
@@ -1310,7 +1341,7 @@ local function RenderBosses(frame, session)
         row.bg:SetTexture(1, 1, 1, line % 2 == 0 and 0.05 or 0.025)
         SetCell(row.cells[1], (frame.expandedBoss == boss.key and "- " or "+ ") .. boss.name)
         SetCell(row.cells[2], tostring(boss.attempts))
-        SetCell(row.cells[3], boss.kills > 0 and "KILL" or "PROGRESS", boss.kills > 0 and 0.25 or 1, boss.kills > 0 and 1 or 0.82, boss.kills > 0 and 0.25 or 0.15)
+        SetCell(row.cells[3], L(boss.kills > 0 and "KILL" or "PROGRESS"), boss.kills > 0 and 0.25 or 1, boss.kills > 0 and 1 or 0.82, boss.kills > 0 and 0.25 or 0.15)
         SetCell(row.cells[4], FormatDuration(boss.duration))
         SetCell(row.cells[5], FirstDeathSummary(boss.firstDeaths))
         row:Show()
@@ -1324,7 +1355,7 @@ local function RenderBosses(frame, session)
                 detail.bg:SetTexture(0.2, 0.6, 1, 0.06)
                 SetCell(detail.cells[1], "    #" .. attempt)
                 SetCell(detail.cells[2], "")
-                SetCell(detail.cells[3], pull.success and "KILL" or (pull.interrupted and "STOPPED" or "WIPE"))
+                SetCell(detail.cells[3], L(PullResult(pull, "STOPPED")))
                 SetCell(detail.cells[4], FormatDuration(pull.duration or 0))
                 local death = pull.firstDeath and (pull.firstDeath.name .. " @ " .. FormatDuration(pull.firstDeath.at)) or "-"
                 SetCell(detail.cells[5], death)
@@ -1371,7 +1402,7 @@ local function EnsureLootRow(frame, index)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:ClearLines()
         local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.itemLink)
-        if not ok then GameTooltip:AddLine("Item tooltip unavailable.", 1, 0.78, 0.2) end
+        if not ok then GameTooltip:AddLine(L("Item tooltip unavailable."), 1, 0.78, 0.2) end
         GameTooltip:Show()
     end)
     row.itemButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -1506,7 +1537,7 @@ local function BuildSessionFrame()
     end
     local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 18, -16)
-    title:SetText("ARC - Raid Session Report")
+    title:SetText(L("ARC - Raid Session Report"))
     local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -4, -4)
     frame.closeButton = close
@@ -1558,7 +1589,8 @@ local function BuildSessionFrame()
         button:SetSize(92, 22)
         if anchor then button:SetPoint("LEFT", anchor, "RIGHT", x or 6, 0)
         else button:SetPoint("TOPLEFT", 18, -103) end
-        button:SetText(label)
+        button:SetText(L(label))
+        button.localeLabel = label
         button:SetScript("OnClick", function() frame.activeTab = key; ARC:RefreshSessionReport() end)
         frame.tabs[key] = button
         return button
@@ -1579,12 +1611,12 @@ local function BuildSessionFrame()
     frame.select = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.select:SetSize(150, 22)
     frame.select:SetPoint("LEFT", frame.toggle, "RIGHT", 10, 0)
-    frame.select:SetText("Select All for Copy")
+    frame.select:SetText(L("Select All for Copy"))
     frame.select:SetScript("OnClick", function() edit:SetFocus(); edit:HighlightText() end)
     frame.previous = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.previous:SetSize(76, 22)
     frame.previous:SetPoint("LEFT", frame.select, "RIGHT", 10, 0)
-    frame.previous:SetText("Previous")
+    frame.previous:SetText(L("Previous"))
     frame.previous:SetScript("OnClick", function()
         local nextOffset = (frame.historyOffset or 0) + 1
         if ARC:GetReportSession(nextOffset) then frame.historyOffset = nextOffset; ARC:RefreshSessionReport() end
@@ -1592,7 +1624,7 @@ local function BuildSessionFrame()
     frame.next = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.next:SetSize(62, 22)
     frame.next:SetPoint("LEFT", frame.previous, "RIGHT", 8, 0)
-    frame.next:SetText("Next")
+    frame.next:SetText(L("Next"))
     frame.next:SetScript("OnClick", function()
         frame.historyOffset = math.max(0, (frame.historyOffset or 0) - 1)
         ARC:RefreshSessionReport()
@@ -1600,12 +1632,12 @@ local function BuildSessionFrame()
     frame.refresh = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.refresh:SetSize(70, 22)
     frame.refresh:SetPoint("LEFT", frame.next, "RIGHT", 8, 0)
-    frame.refresh:SetText("Refresh")
+    frame.refresh:SetText(L("Refresh"))
     frame.refresh:SetScript("OnClick", function() ARC:RefreshSessionReport() end)
     frame.delete = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     frame.delete:SetSize(110, 22)
     frame.delete:SetPoint("LEFT", frame.refresh, "RIGHT", 8, 0)
-    frame.delete:SetText("Delete Report")
+    frame.delete:SetText(L("Delete Report"))
     frame.delete:SetScript("OnClick", function()
         ARC:RequestDeleteRaidSession(ARC:GetReportSession(frame.historyOffset))
     end)
@@ -1614,6 +1646,15 @@ local function BuildSessionFrame()
     frame.buttons = { frame.toggle, frame.select, frame.previous, frame.next, frame.refresh, frame.delete,
         playersTab, bossesTab, lootTab, exportTab }
     frame.historyOffset = 0
+    if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(frame, function()
+        title:SetText(L("ARC - Raid Session Report"))
+        frame.select:SetText(L("Select All for Copy"))
+        frame.previous:SetText(L("Previous"))
+        frame.next:SetText(L("Next"))
+        frame.refresh:SetText(L("Refresh"))
+        frame.delete:SetText(L("Delete Report"))
+        for _, button in pairs(frame.tabs) do button:SetText(L(button.localeLabel)) end
+    end) end
     frame:Hide()
     return frame
 end
@@ -1664,17 +1705,17 @@ function ARC:RefreshSessionReport(session)
         local ended = selected.endedAt or WallTime()
         local _, uniqueKills, bossSeconds = SessionStats(selected)
         local position, total = ReportPosition(selected)
-        local status = selected.endedAt and "FINISHED" or "ACTIVE"
-        frame.summary:SetText(string.format("Session %d / %d  |  %s  |  Difficulty %s  |  %s\n%s - %s  |  Duration %s\nBosses %d  |  Pulls %d  |  Ready checks %d  |  Boss %s  |  Trash %s",
-            position, total, selected.instance or "Unknown", selected.difficulty or "?", status,
-            DisplayTime(selected.startedAt), selected.endedAt and DisplayTime(selected.endedAt) or "now",
+        local status = L(selected.endedAt and "FINISHED" or "ACTIVE")
+        frame.summary:SetText(L("Session %d / %d  |  %s  |  Difficulty %s  |  %s\n%s - %s  |  Duration %s\nBosses %d  |  Pulls %d  |  Ready checks %d  |  Boss %s  |  Trash %s",
+            position, total, selected.instance or L("Unknown"), selected.difficulty or "?", status,
+            DisplayTime(selected.startedAt), selected.endedAt and DisplayTime(selected.endedAt) or L("now"),
             FormatDuration(ended - (selected.startedAt or ended)), uniqueKills, #(selected.pulls or {}),
             ReadyCheckCount(selected), FormatDuration(bossSeconds), FormatDuration(TrashCombatSeconds(selected))))
         RenderPlayers(frame, selected)
         RenderBosses(frame, selected)
         RenderLoot(frame, selected)
     else
-        frame.summary:SetText("No raid session recorded yet.")
+        frame.summary:SetText(L("No raid session recorded yet."))
         if frame.playersHeader then frame.playersHeader:Hide() end
         if frame.bossesHeader then frame.bossesHeader:Hide() end
         if frame.lootHeader then frame.lootHeader:Hide() end
@@ -1692,7 +1733,7 @@ function ARC:RefreshSessionReport(session)
     for key, button in pairs(frame.tabs or {}) do
         if key == tab then button:Disable() else button:Enable() end
     end
-    frame.toggle:SetText(self:IsSessionActive() and "End Session" or "Start Session")
+    frame.toggle:SetText(L(self:IsSessionActive() and "End Session" or "Start Session"))
     local offset = frame.historyOffset or 0
     if offset > 0 then frame.next:Enable() else frame.next:Disable() end
     if self:GetReportSession(offset + 1) then frame.previous:Enable() else frame.previous:Disable() end

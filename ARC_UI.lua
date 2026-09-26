@@ -3,6 +3,22 @@ local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local ClassColor = I.ClassColor
 local DurabilityColor = I.DurabilityColor
 local GetReadyCheckSecondsLeft = I.GetReadyCheckSecondsLeft
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then
+        local ok, value = pcall(string.format, key, ...)
+        if ok then return value end
+    end
+    return key
+end
+local function D(text)
+    return ARC.LocalizeDiagnostic and ARC:LocalizeDiagnostic(text) or L(text)
+end
+local function LocalizedList(values)
+    local localized = {}
+    for index, value in ipairs(values or {}) do localized[index] = D(value) end
+    return table.concat(localized, ", ")
+end
 
 --=============================================================================
 -- UI CONSTRUCTION
@@ -88,7 +104,7 @@ local function BuildCategorySourceLines(key)
         elseif buffName and not sourceName and not unknown[buffName] then
             unknown[buffName] = true
             lines[#lines + 1] = {
-                text = string.format("Unknown source - %s", buffName), r = 0.6, g = 0.6, b = 0.6,
+                text = L("Unknown source - %s", buffName), r = 0.6, g = 0.6, b = 0.6,
             }
         end
     end
@@ -103,10 +119,10 @@ local function AttachHeaderCategoryTooltip(header, col)
     hit:EnableMouse(true)
     hit:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:AddLine(CATEGORY_TITLES[col.key], 1, 1, 1)
+        GameTooltip:AddLine(L(CATEGORY_TITLES[col.key]), 1, 1, 1)
         local lines = BuildCategorySourceLines(col.key)
         if #lines == 0 then
-            GameTooltip:AddLine("No source in raid yet", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L("No source in raid yet"), 0.6, 0.6, 0.6)
         else
             for _, line in ipairs(lines) do
                 GameTooltip:AddLine(line.text, line.r, line.g, line.b)
@@ -129,7 +145,8 @@ local function CreateHeader(parent)
             fs:SetPoint("TOPLEFT", col.x, 0)
             fs:SetWidth(col.w)
             fs:SetJustifyH("CENTER")
-            fs:SetText(col.label)
+            fs:SetText(L(col.label))
+            fs.localeKey = col.label
             header.labels[#header.labels + 1] = fs
         end
         if CATEGORY_TITLES[col.key] then
@@ -345,17 +362,17 @@ end
 function ARC:RemindPlayer(e)
     if not e or not e.name then return end
     if e.online == false then
-        print("|cff33ff99ARC:|r Cannot remind " .. e.name .. " while they are offline.")
+        print("|cff33ff99ARC:|r " .. L("Cannot remind %s while they are offline.", e.name))
         return
     end
     local issues = self:GetConfirmedIssueTags(e)
     if #issues == 0 then
-        print("|cff33ff99ARC:|r No confirmed personal issues for " .. e.name .. ".")
+        print("|cff33ff99ARC:|r " .. L("No confirmed personal issues for %s.", e.name))
         return
     end
-    local msg = "ARC reminder: " .. table.concat(issues, ", ") .. ". Please fix before pull."
+    local msg = L("ARC reminder: %s. Please fix before pull.", table.concat(issues, ", "))
     SendChatMessage(msg, "WHISPER", nil, e.fullName or e.name)
-    print("|cff33ff99ARC:|r Reminder sent to " .. e.name .. ".")
+    print("|cff33ff99ARC:|r " .. L("Reminder sent to %s.", e.name))
 end
 
 local ARCRowDropDown = CreateFrame("Frame", "ARCRowDropDown", UIParent, "UIDropDownMenuTemplate")
@@ -367,74 +384,74 @@ local function BuildPlayerMenu(e)
     }
     if not isSelf then
         menu[#menu + 1] = {
-            text = "Whisper",
+            text = L("Whisper"),
             notCheckable = true,
             func = function() ChatFrame_SendTell(e.fullName or e.name, DEFAULT_CHAT_FRAME) end,
         }
         menu[#menu + 1] = {
-            text = "Inspect",
+            text = L("Inspect"),
             notCheckable = true,
             func = function()
                 if e.unit and UnitExists(e.unit) then InspectUnit(e.unit) end
             end,
         }
         menu[#menu + 1] = {
-            text = "Remind (confirmed issues)",
+            text = L("Remind (confirmed issues)"),
             notCheckable = true,
             func = function() ARC:RemindPlayer(e) end,
         }
     end
     local checkItem = ARC.CreatePlayerCheckMenuItem and ARC:CreatePlayerCheckMenuItem(e.unit, e.fullName)
     if checkItem then menu[#menu + 1] = checkItem end
-    menu[#menu + 1] = { text = "Close menu", notCheckable = true }
+    menu[#menu + 1] = { text = L("Close menu"), notCheckable = true }
     return menu
 end
 
 local function AddGearTooltip(e)
     local gear = e.gear
     GameTooltip:AddLine(" ")
-    GameTooltip:AddLine("Gear check", 1, 0.82, 0)
+    GameTooltip:AddLine(L("Gear check"), 1, 0.82, 0)
     if e.professionsKnown and type(e.professions) == "table" and
         (e.professionSource ~= "comm" or (e.professionAt and GetTime() - e.professionAt <= 120)) then
         local names, catalog = {}, ARC.GEAR_RULES and ARC.GEAR_RULES.professions or {}
         for id in pairs(e.professions) do names[#names + 1] = catalog[id] or tostring(id) end
         table.sort(names)
-        GameTooltip:AddLine("Professions: " .. (#names > 0 and table.concat(names, ", ") or "none reported"), 0.7, 0.85, 1, true)
+        GameTooltip:AddLine(L("Professions: %s", #names > 0 and table.concat(names, ", ") or L("none reported")), 0.7, 0.85, 1, true)
     end
     if not gear or not gear.scanned then
-        GameTooltip:AddLine("Waiting for inspect data", 0.6, 0.6, 0.6)
+        GameTooltip:AddLine(L("Waiting for inspect data"), 0.6, 0.6, 0.6)
         return
     end
 
     local minLevel = (ARC_DB and ARC_DB.minItemLevel) or 450
     if gear.issueCount == 0 and gear.auditComplete then
-        GameTooltip:AddLine("No issues found under ARC gear rules", 0.2, 1, 0.2)
+        GameTooltip:AddLine(L("No issues found under ARC gear rules"), 0.2, 1, 0.2)
     end
     if gear.missingGems > 0 then
-        GameTooltip:AddLine("Missing gems: " .. gear.missingGems .. " (" ..
-            table.concat(gear.missingGemSlots, ", ") .. ")", 1, 0.25, 0.25, true)
+        GameTooltip:AddLine(L("Missing gems: %d (%s)", gear.missingGems,
+            LocalizedList(gear.missingGemSlots)), 1, 0.25, 0.25, true)
     end
     if #gear.missingEnchants > 0 then
-        GameTooltip:AddLine("Missing enchants: " .. table.concat(gear.missingEnchants, ", "), 1, 0.25, 0.25, true)
+        GameTooltip:AddLine(L("Missing enchants: %s", LocalizedList(gear.missingEnchants)), 1, 0.25, 0.25, true)
     end
-    for _, text in ipairs(gear.badGems or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
-    for _, text in ipairs(gear.badEnchants or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
-    for _, text in ipairs(gear.professionIssues or {}) do GameTooltip:AddLine(text, 1, 0.35, 0.2, true) end
-    for _, text in ipairs(gear.unverified or {}) do GameTooltip:AddLine("Unverified: " .. text, 1, 0.78, 0.2, true) end
+    for _, text in ipairs(gear.badGems or {}) do GameTooltip:AddLine(D(text), 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.badEnchants or {}) do GameTooltip:AddLine(D(text), 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.professionIssues or {}) do GameTooltip:AddLine(D(text), 1, 0.35, 0.2, true) end
+    for _, text in ipairs(gear.unverified or {}) do GameTooltip:AddLine(L("Unverified: %s", D(text)), 1, 0.78, 0.2, true) end
     if #gear.wrongPrimary > 0 then
-        GameTooltip:AddLine("Wrong primary stat (expected " .. (gear.expectedPrimary or "?") .. "):", 1, 0.35, 0.2)
+        GameTooltip:AddLine(L("Wrong primary stat (expected %s):", gear.expectedPrimary or "?"), 1, 0.35, 0.2)
         for _, text in ipairs(gear.wrongPrimary) do
-            GameTooltip:AddLine("  " .. text, 1, 0.5, 0.35, true)
+            GameTooltip:AddLine("  " .. D(text), 1, 0.5, 0.35, true)
         end
     end
     if #gear.lowItems > 0 then
-        GameTooltip:AddLine("Items below " .. minLevel .. ":", 1, 0.35, 0.2)
+        GameTooltip:AddLine(L("Items below %d:", minLevel), 1, 0.35, 0.2)
         for _, item in ipairs(gear.lowItems) do
-            GameTooltip:AddLine(string.format("  %s: %s (iLvl %d)", item.label, item.name, item.ilvl), 1, 0.5, 0.35, true)
+            GameTooltip:AddLine(string.format("  %s: %s (iLvl %d)", L(item.label), item.name, item.ilvl), 1, 0.5, 0.35, true)
         end
     end
     if #gear.missingItems > 0 then
-        GameTooltip:AddLine("Empty required slots: " .. table.concat(gear.missingItems, ", "), 1, 0.25, 0.25, true)
+        GameTooltip:AddLine(L("Empty required slots: %s", LocalizedList(gear.missingItems)), 1, 0.25, 0.25, true)
     end
 end
 
@@ -493,22 +510,22 @@ local function CreateRow(parent, index)
         if not e then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("ARC - " .. (e.name or row.fullName), 1, 1, 1)
-        GameTooltip:AddLine("Version: " .. (e.arcVersion or "Not detected"), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine(L("Version: %s", e.arcVersion or L("Not detected")), 0.8, 0.8, 0.8)
         local tone, data, age = ARC:GetConnectionHealth(e)
         local function metric(label, value, suffix)
-            GameTooltip:AddLine(label .. ": " .. (value and (value .. suffix) or "Unavailable"), 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(L("%s: %s", L(label), value and (value .. suffix) or L("Unavailable")), 0.8, 0.8, 0.8)
         end
         metric("Home latency", data and data.home, " ms")
         metric("World latency", data and data.world, " ms")
         metric("FPS (averaged)", data and data.fps, "")
-        if age then GameTooltip:AddLine(string.format("Health report: %ds ago", math.floor(age)), 0.8, 0.8, 0.8) end
+        if age then GameTooltip:AddLine(L("Health report: %ds ago", math.floor(age)), 0.8, 0.8, 0.8) end
         if e.lastComm and e.hasARC then
-            GameTooltip:AddLine(string.format("Last ARC message: %ds ago", math.floor(math.max(0, GetTime() - e.lastComm))), 0.8, 0.8, 0.8)
+            GameTooltip:AddLine(L("Last ARC message: %ds ago", math.floor(math.max(0, GetTime() - e.lastComm))), 0.8, 0.8, 0.8)
         end
         if age and age > 30 then
-            GameTooltip:AddLine("Stale report; connection loss is not confirmed.", 1, 0.78, 0.2)
+            GameTooltip:AddLine(L("Stale report; connection loss is not confirmed."), 1, 0.78, 0.2)
         elseif tone == "unknown" then
-            GameTooltip:AddLine("Connection data unavailable.", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L("Connection data unavailable."), 0.6, 0.6, 0.6)
         end
         GameTooltip:Show()
     end)
@@ -523,36 +540,36 @@ local function CreateRow(parent, index)
         GameTooltip:AddLine(e.name, 1, 1, 1)
         local visualState = GetEntryVisualState(e)
         if visualState == "offline" then
-            GameTooltip:AddLine("Status: Offline", 0.55, 0.55, 0.55)
+            GameTooltip:AddLine(L("Status: Offline"), 0.55, 0.55, 0.55)
         elseif visualState == "dead" then
-            GameTooltip:AddLine("Status: Dead or ghost", 1, 0.25, 0.25)
+            GameTooltip:AddLine(L("Status: Dead or ghost"), 1, 0.25, 0.25)
         elseif visualState == "afk" then
-            GameTooltip:AddLine("Status: AFK", 1, 0.58, 0.18)
+            GameTooltip:AddLine(L("Status: AFK"), 1, 0.58, 0.18)
         elseif visualState == "range" then
-            GameTooltip:AddLine("Status: Aura/inspect data out of range", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine(L("Status: Aura/inspect data out of range"), 0.7, 0.7, 0.7)
         elseif visualState == "waiting" then
-            GameTooltip:AddLine("Status: Waiting for inspect data", 1, 0.78, 0.2)
+            GameTooltip:AddLine(L("Status: Waiting for inspect data"), 1, 0.78, 0.2)
         else
-            GameTooltip:AddLine("Status: Data available", 0.3, 1, 0.4)
+            GameTooltip:AddLine(L("Status: Data available"), 0.3, 1, 0.4)
         end
         if e.specName then GameTooltip:AddLine(e.specName, 0.8, 0.8, 1) end
         if e.specSource == "inspect" then
-            GameTooltip:AddLine("(spec via inspect - may be stale)", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L("(spec via inspect - may be stale)"), 0.6, 0.6, 0.6)
         elseif e.specSource == "comm" then
-            GameTooltip:AddLine("(reported by their ARC)", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L("(reported by their ARC)"), 0.6, 0.6, 0.6)
         end
         if e.hasARC then
-            GameTooltip:AddLine("ARC installed" .. (e.arcVersion and (" - version " .. e.arcVersion) or ""), 0.2, 1, 0.7)
+            GameTooltip:AddLine(L("ARC installed%s", e.arcVersion and L(" - version %s", e.arcVersion) or ""), 0.2, 1, 0.7)
             local versionState = ARC:CompareVersions(e.arcVersion, ARC.VERSION)
             if versionState == -1 then
-                GameTooltip:AddLine("Outdated ARC: update to " .. ARC.VERSION, 1, 0.3, 0.2)
+                GameTooltip:AddLine(L("Outdated ARC: update to %s", ARC.VERSION), 1, 0.3, 0.2)
             elseif versionState == 1 then
-                GameTooltip:AddLine("Newer than this ARC client", 0.3, 0.8, 1)
+                GameTooltip:AddLine(L("Newer than this ARC client"), 0.3, 0.8, 1)
             elseif versionState == nil then
-                GameTooltip:AddLine("Version could not be compared", 1, 0.78, 0.2)
+                GameTooltip:AddLine(L("Version could not be compared"), 1, 0.78, 0.2)
             end
         else
-            GameTooltip:AddLine("ARC not detected", 0.55, 0.55, 0.55)
+            GameTooltip:AddLine(L("ARC not detected"), 0.55, 0.55, 0.55)
         end
 
         if e.flask then
@@ -563,17 +580,17 @@ local function CreateRow(parent, index)
             end
             local status, remaining = ARC:GetConsumableStatus(e, "flask")
             if remaining then
-                GameTooltip:AddLine("Flask remaining: " .. FormatRemaining(remaining), status == "expiring" and 1 or 0.7,
+                GameTooltip:AddLine(L("Flask remaining: %s", FormatRemaining(remaining)), status == "expiring" and 1 or 0.7,
                     status == "expiring" and 0.65 or 0.9, status == "expiring" and 0.15 or 0.7)
             end
         end
         if e.food then
             local foodName = e.foodName
             local detail = foodName and GetBuffTooltipDetail(e.unit, foodName)
-            GameTooltip:AddLine("Food: " .. (detail or foodName or "Well Fed"), 1, 0.82, 0)
+            GameTooltip:AddLine(L("Food: %s", detail or foodName or "Well Fed"), 1, 0.82, 0)
             local status, remaining = ARC:GetConsumableStatus(e, "food")
             if remaining then
-                GameTooltip:AddLine("Food remaining: " .. FormatRemaining(remaining), status == "expiring" and 1 or 0.7,
+                GameTooltip:AddLine(L("Food remaining: %s", FormatRemaining(remaining)), status == "expiring" and 1 or 0.7,
                     status == "expiring" and 0.65 or 0.9, status == "expiring" and 0.15 or 0.7)
             end
         end
@@ -584,35 +601,35 @@ local function CreateRow(parent, index)
         if e.critName then raidBuffs[#raidBuffs + 1] = e.critName end
         if e.mastName then raidBuffs[#raidBuffs + 1] = e.mastName end
         if #raidBuffs > 0 then
-            GameTooltip:AddLine("Raid buffs: " .. table.concat(raidBuffs, ", "), 0.7, 0.9, 0.7)
+            GameTooltip:AddLine(L("Raid buffs: %s", table.concat(raidBuffs, ", ")), 0.7, 0.9, 0.7)
         end
 
         if e.ilvlApprox then
-            GameTooltip:AddLine("Item level is an estimate (no ARC on their end)", 0.6, 0.6, 0.6)
+            GameTooltip:AddLine(L("Item level is an estimate (no ARC on their end)"), 0.6, 0.6, 0.6)
         end
         if e.hasARC and e.durPct then
-            GameTooltip:AddLine(string.format("Durability: %d%% average, %d%% lowest item",
+            GameTooltip:AddLine(L("Durability: %d%% average, %d%% lowest item",
                 e.durPct, e.durWorst or e.durPct), 0.8, 0.8, 0.8)
         else
-            GameTooltip:AddLine("Durability unavailable - the WoW API exposes no remote value or reliable estimate", 0.6, 0.6, 0.6, true)
+            GameTooltip:AddLine(L("Durability unavailable - the WoW API exposes no remote value or reliable estimate"), 0.6, 0.6, 0.6, true)
         end
         AddGearTooltip(e)
         if ARC.GetTalentStatus then
             local status, tone, details = ARC:GetTalentStatus(e)
-            GameTooltip:AddLine("Talents: " .. status, 1, 0.82, 0)
-            for _, detail in ipairs(details) do GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
+            GameTooltip:AddLine(L("Talents: %s", status), 1, 0.82, 0)
+            for _, detail in ipairs(details) do GameTooltip:AddLine(D(detail), 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
         end
         if ARC.GetSelfBuffStatus then
             local status, tone, details = ARC:GetSelfBuffStatus(e)
-            GameTooltip:AddLine("Self / tank / pet readiness: " .. status, 1, 0.82, 0)
-            for _, detail in ipairs(details) do GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
+            GameTooltip:AddLine(L("Self / tank / pet readiness: %s", status), 1, 0.82, 0)
+            for _, detail in ipairs(details) do GameTooltip:AddLine(D(detail), 1, tone == "bad" and 0.25 or 0.78, 0.2, true) end
         end
         if ARC.GetHealthstoneStatus then
             local _, tone, detail = ARC:GetHealthstoneStatus(e)
-            GameTooltip:AddLine(detail, 1, tone == "bad" and 0.25 or 0.78, 0.2, true)
+            GameTooltip:AddLine(D(detail), 1, tone == "bad" and 0.25 or 0.78, 0.2, true)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine("Right-click for options", 0.5, 0.5, 0.5)
+        GameTooltip:AddLine(L("Right-click for options"), 0.5, 0.5, 0.5)
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
@@ -805,7 +822,7 @@ function ARC:RespondReadyCheck(ready)
     local ok = pcall(ConfirmReadyCheck, ready and 1 or nil)
     if not ok then
         self.readyCheckResponded = false
-        print("|cff33ff99ARC:|r Could not respond; use the Blizzard ready-check dialog.")
+        print("|cff33ff99ARC:|r " .. L("Could not respond; use the Blizzard ready-check dialog."))
     elseif ReadyCheckFrame then
         ReadyCheckFrame:Hide()
     end
@@ -854,13 +871,13 @@ local function BuildMainFrame()
     f.readyNo = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.readyNo:SetSize(90, 22)
     f.readyNo:SetPoint("TOPRIGHT", -40, -12)
-    f.readyNo:SetText("Not Ready")
+    f.readyNo:SetText(L("Not Ready"))
     f.readyNo:SetScript("OnClick", function() ARC:RespondReadyCheck(false) end)
     f.readyNo:Disable()
     f.readyYes = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.readyYes:SetSize(78, 22)
     f.readyYes:SetPoint("RIGHT", f.readyNo, "LEFT", -6, 0)
-    f.readyYes:SetText("Ready")
+    f.readyYes:SetText(L("Ready"))
     f.readyYes:SetScript("OnClick", function() ARC:RespondReadyCheck(true) end)
     f.readyYes:Disable()
 
@@ -900,23 +917,29 @@ local function BuildMainFrame()
     f.announce = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.announce:SetSize(150, 20)
     f.announce:SetPoint("BOTTOMLEFT", 10, 8)
-    f.announce:SetText("Announce Missing")
+    f.announce:SetText(L("Announce Missing"))
     f.announce:SetScript("OnClick", function() ARC:AnnounceMissing() end)
 
     f.sessionButton = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.sessionButton:SetSize(130, 20)
     f.sessionButton:SetPoint("LEFT", f.announce, "RIGHT", 8, 0)
-    f.sessionButton:SetText("Session Report")
+    f.sessionButton:SetText(L("Session Report"))
     f.sessionButton:SetScript("OnClick", function()
         if ARC.ShowSessionReport then ARC:ShowSessionReport() end
     end)
 
     local hint = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     hint:SetPoint("BOTTOMRIGHT", -10, 10)
-    hint:SetText("Inspect: 0/0  |  /arc help")
+    hint:SetText(L("Inspect: %d/%d%s  |  /arc help", 0, 0, ""))
     f.hint = hint
 
     f.rows = {}
+    if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(f, function()
+        f.readyNo:SetText(L("Not Ready"))
+        f.readyYes:SetText(L("Ready"))
+        f.announce:SetText(L("Announce Missing"))
+        for _, label in ipairs(f.header.labels or {}) do label:SetText(L(label.localeKey)) end
+    end) end
     f:Hide()
     return f
 end
@@ -958,11 +981,11 @@ end
 local function FormatPlayerName(e, fallbackName)
     local name = e.name or fallbackName
     if e.online == false then
-        return name .. " (off)"
+        return name .. L(" (off)")
     elseif e.dead then
-        return name .. " (dead)"
+        return name .. L(" (dead)")
     elseif e.afk then
-        return name .. " (afk)"
+        return name .. L(" (afk)")
     end
     return name
 end
@@ -975,14 +998,14 @@ local function UpdateTitleText()
     if ARC.readyCheckActive then
         local left = GetReadyCheckSecondsLeft()
         if left == nil then
-            text = text .. " (in progress)"
+            text = text .. L(" (in progress)")
         elseif left > 0 then
-            text = text .. string.format(" (%d second%s remaining)", left, left == 1 and "" or "s")
+            text = text .. L(" (%d seconds remaining)", left)
         else
-            text = text .. " (Finished)"
+            text = text .. L(" (Finished)")
         end
     elseif ARC.readyCheckFinished then
-        text = text .. " (Finished)"
+        text = text .. L(" (Finished)")
     end
     f.title:SetText(text)
 end
@@ -1025,14 +1048,14 @@ function ARC:GetRaidReadinessVerdict()
         elseif state == "warn" then unknown = unknown + 1 end
     end
     if bad > 0 then
-        local suffix = unknown > 0 and ("; " .. unknown .. " unverified") or ""
-        return string.format("NOT READY - %d player%s with confirmed issues%s", bad, bad == 1 and "" or "s", suffix), "bad", bad, unknown
+        local suffix = unknown > 0 and L("; %d unverified", unknown) or ""
+        return L("NOT READY - %d players with confirmed issues%s", bad, suffix), "bad", bad, unknown
     end
     if unknown > 0 then
-        return string.format("CHECK INCOMPLETE - %d player%s unverified", unknown, unknown == 1 and "" or "s"), "warn", bad, unknown
+        return L("CHECK INCOMPLETE - %d players unverified", unknown), "warn", bad, unknown
     end
-    if #self.order == 0 then return "CHECK INCOMPLETE - roster unavailable", "warn", 0, 0 end
-    return "READY TO PULL - all verified checks passed", "good", 0, 0
+    if #self.order == 0 then return L("CHECK INCOMPLETE - roster unavailable"), "warn", 0, 0 end
+    return L("READY TO PULL - all verified checks passed"), "good", 0, 0
 end
 
 function ARC:Render()
@@ -1042,7 +1065,7 @@ function ARC:Render()
     UpdateTitleText()
     self:UpdateReadyButtons()
     if f.sessionButton then
-        f.sessionButton:SetText(self.IsSessionActive and self:IsSessionActive() and "Session: ACTIVE" or "Session Report")
+        f.sessionButton:SetText(L(self.IsSessionActive and self:IsSessionActive() and "Session: ACTIVE" or "Session Report"))
     end
     local verdictText, verdictTone = self:GetRaidReadinessVerdict()
     local setupText, setupTone = self:GetRaidSetupStatus()
@@ -1146,10 +1169,10 @@ function ARC:Render()
         end
 
         if not e.hasARC then row.arc:SetText("-")
-        elseif versionState == -1 then row.arc:SetText("Old")
-        elseif versionState == 1 then row.arc:SetText("New")
+        elseif versionState == -1 then row.arc:SetText(L("Old"))
+        elseif versionState == 1 then row.arc:SetText(L("New"))
         elseif versionState == nil then row.arc:SetText("?")
-        else row.arc:SetText("Yes") end
+        else row.arc:SetText(L("Yes")) end
         local talText, talTone = self:GetTalentStatus(e)
         local buffText, buffTone = self:GetSelfBuffStatus(e)
         local stoneText, stoneTone = self:GetHealthstoneStatus(e)
@@ -1171,7 +1194,7 @@ function ARC:Render()
         f.rows[i]:Hide()
     end
 
-    f.summary:SetText(string.format(
+    f.summary:SetText(L(
         "|cff55ff55Ready: %d/%d|r  |cffff8888Flask: %d  Food: %d  Soon: %d  Gear: %d  Talents: %d  Self: %d  HS: %d|r  |cff55ffbbARC: %d/%d%s|r",
         ready, total, missingFlask, missingFood, expiringConsumables, gearIssues, talentIssues, selfBuffIssues,
         stoneIssues, arcUsers, total, oldArc > 0 and ("  |cffff5533Old: " .. oldArc .. "|r") or ""
@@ -1189,7 +1212,7 @@ function ARC:Render()
     local waiting = math.max(0, total - inspected - inspectUnavailable)
     local suffix = waiting > 0 and (" (waiting " .. waiting .. ")") or
         (inspectUnavailable > 0 and (" (unavailable " .. inspectUnavailable .. ")") or "")
-    f.hint:SetText(string.format("Inspect: %d/%d%s  |  /arc help", inspected, total, suffix))
+    f.hint:SetText(L("Inspect: %d/%d%s  |  /arc help", inspected, total, suffix))
     if waiting > 0 then f.hint:SetTextColor(1, 0.78, 0.2)
     elseif inspectUnavailable > 0 then f.hint:SetTextColor(0.65, 0.65, 0.65)
     else f.hint:SetTextColor(0.3, 1, 0.5) end
@@ -1221,12 +1244,12 @@ function ARC:AnnounceMissing()
     end
 
     if #missing == 0 then
-        local suffix = unavailable > 0 and (" (" .. unavailable .. " player(s) could not be verified.)") or ""
-        print("|cff33ff99ARC:|r Everyone with available aura data has flask and food." .. suffix)
+        local suffix = unavailable > 0 and L(" (%d player(s) could not be verified.)", unavailable) or ""
+        print("|cff33ff99ARC:|r " .. L("Everyone with available aura data has flask and food.") .. suffix)
         return
     end
     if unavailable > 0 then
-        print("|cff33ff99ARC:|r Skipped " .. unavailable .. " player(s) with unavailable aura data.")
+        print("|cff33ff99ARC:|r " .. L("Skipped %d player(s) with unavailable aura data.", unavailable))
     end
 
     local chatType

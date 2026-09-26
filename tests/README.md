@@ -35,6 +35,7 @@ mocked WoW APIs, verifies the player-check entry and checks version agreement.
 It checks:
 
 - consistent Advanced Raid Check branding, unchanged settings/slash/prefix and countdown;
+- English fallback, Slovak/Czech switching, live UI refresh and per-character language storage;
 - legacy, corrupt and newer saved-variable schemas without setting/history loss;
 - compact inspect-header button anchors, long-title space, reopening and title-widget fallbacks;
 - full Talents label/column width and the simplified talent tooltip;
@@ -74,8 +75,9 @@ It checks:
 - top/weak/PvP enchants, profession options, runeforges, scopes and off-hands;
 - cold gem retries without another inspect or lost ilvl; unknown data cannot pass;
 - hunter ranged weapon ilvl weighting.
-- raid-session attendance, AFK intervals, 5-second trash inactivity with
-  retroactive threshold credit/reset, boss kills/first deaths and copyable reports.
+- raid-session attendance, AFK intervals, 10-second trash inactivity with
+  retroactive threshold credit/reset, boss resets/wipes/kills, first deaths and
+  copyable reports.
 - player-grouped session loot, boss attribution, epic-only trash, exact item
   tooltips, bonus-roll sync/deduplication and empty-roll limitations.
 - stale TOC omitting the new module: one startup warning, safe world/inspect

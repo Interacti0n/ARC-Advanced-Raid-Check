@@ -91,6 +91,12 @@ ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often th
 ARC.INSPECT_RETRY_GAP = 12.0               -- seconds before retrying a failed inspect
 ARC.DB_SCHEMA_VERSION = 1                  -- independent from the addon release version
 
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then return string.format(key, ...) end
+    return key
+end
+
 --=============================================================================
 -- SAVED VARIABLES / DEFAULTS
 --=============================================================================
@@ -1346,29 +1352,29 @@ ARC.LOOT_METHODS = { any = "Not checked", freeforall = "Free for All", roundrobi
 
 function ARC:GetRaidSetupStatus()
     local settings = ARC_DB.raidSetup
-    if not settings.enabled then return "Raid setup check OFF - click to configure", "neutral" end
-    if not IsInRaid() then return "Raid setup: not in a raid - click to configure", "neutral" end
+    if not settings.enabled then return L("Raid setup check OFF - click to configure"), "neutral" end
+    if not IsInRaid() then return L("Raid setup: not in a raid - click to configure"), "neutral" end
     local _, instanceType, instanceDifficulty = nil, nil, nil
     if GetInstanceInfo then _, instanceType, instanceDifficulty = GetInstanceInfo() end
-    if instanceType == "pvp" or instanceType == "arena" then return "Raid setup: PvP instance - PvE checks skipped", "neutral" end
+    if instanceType == "pvp" or instanceType == "arena" then return L("Raid setup: PvP instance - PvE checks skipped"), "neutral" end
     local difficulty
     if instanceType == "raid" then difficulty = instanceDifficulty
     elseif instanceType then difficulty = GetRaidDifficultyID and GetRaidDifficultyID() end
     local loot = GetLootMethod and GetLootMethod()
     local problems, unknown = {}, {}
     if settings.difficulty ~= 0 then
-        if not difficulty or difficulty == 0 then unknown[#unknown + 1] = "difficulty unavailable"
+        if not difficulty or difficulty == 0 then unknown[#unknown + 1] = L("difficulty unavailable")
         elseif difficulty ~= settings.difficulty then
-            problems[#problems + 1] = "Mode: " .. (self.RAID_DIFFICULTIES[difficulty] or tostring(difficulty)) .. " -> expected " .. self.RAID_DIFFICULTIES[settings.difficulty]
+            problems[#problems + 1] = L("Mode: %s -> expected %s", L(self.RAID_DIFFICULTIES[difficulty] or tostring(difficulty)), L(self.RAID_DIFFICULTIES[settings.difficulty]))
         end
     end
     if settings.loot ~= "any" then
-        if not loot or not self.LOOT_METHODS[loot] or loot == "any" then unknown[#unknown + 1] = "loot mode unavailable"
-        elseif loot ~= settings.loot then problems[#problems + 1] = "Loot: " .. (self.LOOT_METHODS[loot] or loot) .. " -> expected " .. self.LOOT_METHODS[settings.loot] end
+        if not loot or not self.LOOT_METHODS[loot] or loot == "any" then unknown[#unknown + 1] = L("loot mode unavailable")
+        elseif loot ~= settings.loot then problems[#problems + 1] = L("Loot: %s -> expected %s", L(self.LOOT_METHODS[loot] or loot), L(self.LOOT_METHODS[settings.loot])) end
     end
-    if #problems > 0 then return "! RAID SETUP MISMATCH\n" .. table.concat(problems, "  |  ") .. (#unknown > 0 and ("  |  " .. table.concat(unknown, ", ")) or ""), "bad" end
-    if #unknown > 0 then return "RAID SETUP UNVERIFIED\n" .. table.concat(unknown, "  |  "), "warn" end
-    if settings.difficulty == 0 and settings.loot == "any" then return "RAID SETUP NOT CONFIGURED\nClick here to choose the expected raid mode and loot method", "warn" end
-    return "Raid setup OK" .. ((settings.difficulty == 0 or settings.loot == "any") and " (selected checks only)" or "") ..
-        "\n" .. (self.RAID_DIFFICULTIES[difficulty] or "Unknown mode") .. "  |  " .. (self.LOOT_METHODS[loot] or "Unknown loot") .. "  |  Click to configure", "good"
+    if #problems > 0 then return L("! RAID SETUP MISMATCH") .. "\n" .. table.concat(problems, "  |  ") .. (#unknown > 0 and ("  |  " .. table.concat(unknown, ", ")) or ""), "bad" end
+    if #unknown > 0 then return L("RAID SETUP UNVERIFIED") .. "\n" .. table.concat(unknown, "  |  "), "warn" end
+    if settings.difficulty == 0 and settings.loot == "any" then return L("RAID SETUP NOT CONFIGURED\nClick here to choose the expected raid mode and loot method"), "warn" end
+    return L("Raid setup OK") .. ((settings.difficulty == 0 or settings.loot == "any") and L(" (selected checks only)") or "") ..
+        "\n" .. L(self.RAID_DIFFICULTIES[difficulty] or "Unknown mode") .. "  |  " .. L(self.LOOT_METHODS[loot] or "Unknown loot") .. "  |  " .. L("Click to configure"), "good"
 end

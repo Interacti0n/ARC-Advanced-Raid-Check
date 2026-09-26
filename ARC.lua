@@ -5,6 +5,14 @@ local ARC_InitDB = I.ARC_InitDB
 local RefreshUnitPublicData = I.RefreshUnitPublicData
 local HandleCommMessage = I.HandleCommMessage
 local SetFrameShown = I.SetFrameShown
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then
+        local ok, value = pcall(string.format, key, ...)
+        if ok then return value end
+    end
+    return key
+end
 
 -- A MoP /reload can reuse the TOC cached at client startup. After an update
 -- that adds a file, the old modules can reload without the new player check.
@@ -18,9 +26,7 @@ local function HasPlayerCheck(notify, repeatWarning)
     end
     if notify and (repeatWarning or not playerCheckWarningShown) then
         playerCheckWarningShown = true
-        print("|cffffcc00ARC:|r Player check module is not loaded (ARC_PlayerCheck.lua). " ..
-            "Fully exit WoW and start it again; /reload is not enough after adding addon files. " ..
-            "If this persists, reinstall the complete ARC update and check earlier Lua errors.")
+        print("|cffffcc00ARC:|r " .. L("Player check module is not loaded (ARC_PlayerCheck.lua). Fully exit WoW and start it again; /reload is not enough after adding addon files. If this persists, reinstall the complete ARC update and check earlier Lua errors."))
     end
     return false
 end
@@ -64,6 +70,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         local addon = ...
         if addon == ADDON_NAME then
             ARC_InitDB()
+            if ARC.InitializeLocalization then ARC:InitializeLocalization() end
             if ARC.InitSessionTracker then ARC:InitSessionTracker() end
             if RegisterAddonMessagePrefix then
                 RegisterAddonMessagePrefix(ARC.COMM_PREFIX)
@@ -273,36 +280,36 @@ SlashCmdList["ARC"] = function(rawMsg)
         ARC:OpenRaidOptions()
     elseif msg == "lock" then
         ARC_DB.locked = true
-        print("|cff33ff99ARC:|r window locked.")
+        print("|cff33ff99ARC:|r " .. L("Window locked."))
     elseif msg == "unlock" then
         ARC_DB.locked = false
-        print("|cff33ff99ARC:|r window unlocked.")
+        print("|cff33ff99ARC:|r " .. L("Window unlocked."))
     elseif msg == "reset" then
         ARC_DB.point = { "CENTER", "UIParent", "CENTER", 0, 150 }
         if ARC.frame then
             ARC.frame:ClearAllPoints()
             ARC.frame:SetPoint(unpack(ARC_DB.point))
         end
-        print("|cff33ff99ARC:|r position reset.")
+        print("|cff33ff99ARC:|r " .. L("Position reset."))
     elseif msg == "autohide" then
         ARC_DB.autoHide = not ARC_DB.autoHide
-        print("|cff33ff99ARC:|r auto-hide on pull is now " .. (ARC_DB.autoHide and "ON" or "OFF") .. ".")
+        print("|cff33ff99ARC:|r " .. L("Auto-hide on pull is now %s.", L(ARC_DB.autoHide and "ON" or "OFF")))
     elseif msg == "manual" or msg:match("^manual%s") then
         local value = msg:match("^manual%s+(.+)$")
         if value and value ~= "on" and value ~= "off" then
-            print("|cff33ff99ARC:|r Usage: /arc manual [on|off]")
+            print("|cff33ff99ARC:|r " .. L("Usage: /arc manual [on|off]"))
             return
         end
         local enabled = not ARC_DB.manualMode
         if value then enabled = value == "on" end
         ARC:SetManualMode(enabled)
-        print("|cff33ff99ARC:|r manual opening mode is " .. (enabled and "ON" or "OFF") .. ".")
+        print("|cff33ff99ARC:|r " .. L("Manual opening mode is %s.", L(enabled and "ON" or "OFF")))
     elseif msg == "minimap" then
         ARC_DB.minimap.hide = not ARC_DB.minimap.hide
         if ARC.minimapButton then
             SetFrameShown(ARC.minimapButton, not ARC_DB.minimap.hide)
         end
-        print("|cff33ff99ARC:|r minimap button is now " .. (ARC_DB.minimap.hide and "OFF" or "ON") .. ".")
+        print("|cff33ff99ARC:|r " .. L("Minimap button is now %s.", L(ARC_DB.minimap.hide and "OFF" or "ON")))
     elseif msg == "options" or msg == "config" then
         ARC:OpenOptions()
     elseif msg == "check" or msg == "check self" then
@@ -318,27 +325,29 @@ SlashCmdList["ARC"] = function(rawMsg)
     elseif msg == "session end" then
         if ARC.EndRaidSession then ARC:EndRaidSession() end
     elseif msg == "help" then
-        print("|cff33ff99ARC commands:|r")
-        print("  /arc            - show/hide the window")
-        print("  /arc lock       - lock window position")
-        print("  /arc unlock     - unlock window position")
-        print("  /arc reset      - reset window position")
-        print("  /arc autohide   - toggle auto-hide when you enter combat (pull)")
-        print("  /arc manual [on|off] - toggle or set manual-only window opening")
-        print("  /arc minimap    - toggle the minimap button")
-        print("  /arc options    - open the options panel")
-        print("  /arc check [self] - target player overview, or your own local PvE check")
-        print("  /arc session [start|end] - raid attendance, pulls, deaths and estimated trash inactivity")
-        print("  Right-click a player portrait or ARC row for ARC Check.")
-        print("  /arc raid - expected raid mode/size and loot method; also click the setup banner.")
-        print("  Talents = empty available talents; Self = missing class buffs. ? means unverified.")
-        print("  Self also checks tank stances/RF and pets/Sacrifice/Growl. HS = reported Healthstone uses; ? = unknown.")
-        print("  ARC rows also offer Whisper / Inspect / Remind.")
-        print("  Ready / Not Ready at the top answer your active ready check.")
-        print("  Minimum item level: type 400-600 in Options; save with Enter or Apply.")
-        print("  Gear checks: MoP rare+ gems, enchant tier, primary stats and PvP bonuses.")
-        print("  Yellow Unverified / ? means unknown data, not a passed gear check.")
+        print("|cff33ff99" .. L("ARC commands:") .. "|r")
+        for _, line in ipairs({
+            "  /arc            - show/hide the window",
+            "  /arc lock       - lock window position",
+            "  /arc unlock     - unlock window position",
+            "  /arc reset      - reset window position",
+            "  /arc autohide   - toggle auto-hide when you enter combat (pull)",
+            "  /arc manual [on|off] - toggle or set manual-only window opening",
+            "  /arc minimap    - toggle the minimap button",
+            "  /arc options    - open the options panel",
+            "  /arc check [self] - target player overview, or your own local PvE check",
+            "  /arc session [start|end] - raid attendance, pulls, deaths and estimated trash inactivity",
+            "  Right-click a player portrait or ARC row for ARC Check.",
+            "  /arc raid - expected raid mode/size and loot method; also click the setup banner.",
+            "  Talents = empty available talents; Self = missing class buffs. ? means unverified.",
+            "  Self also checks tank stances/RF and pets/Sacrifice/Growl. HS = reported Healthstone uses; ? = unknown.",
+            "  ARC rows also offer Whisper / Inspect / Remind.",
+            "  Ready / Not Ready at the top answer your active ready check.",
+            "  Minimum item level: type 400-600 in Options; save with Enter or Apply.",
+            "  Gear checks: MoP rare+ gems, enchant tier, primary stats and PvP bonuses.",
+            "  Yellow Unverified / ? means unknown data, not a passed gear check.",
+        }) do print(L(line)) end
     else
-        print("|cff33ff99ARC:|r unknown command. Try /arc help")
+        print("|cff33ff99ARC:|r " .. L("Unknown command. Try /arc help"))
     end
 end

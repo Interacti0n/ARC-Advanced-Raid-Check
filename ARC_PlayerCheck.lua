@@ -1,5 +1,21 @@
 local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_PlayerCheck.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
+local function L(key, ...)
+    if ARC.Text then return ARC:Text(key, ...) end
+    if select("#", ...) > 0 then
+        local ok, value = pcall(string.format, key, ...)
+        if ok then return value end
+    end
+    return key
+end
+local function D(text)
+    return ARC.LocalizeDiagnostic and ARC:LocalizeDiagnostic(text) or L(text)
+end
+local function LocalizedList(values)
+    local localized = {}
+    for index, value in ipairs(values or {}) do localized[index] = D(value) end
+    return table.concat(localized, ", ")
+end
 
 -- This window owns a snapshot, never an ARC.roster entry. A recycled unit
 -- token (for example 'target') must not silently change the displayed player.
@@ -92,7 +108,7 @@ local function SetItemIcon(row, item)
             local ok = pcall(GameTooltip.SetHyperlink, GameTooltip, self.itemLink)
             if not ok then
                 GameTooltip:ClearLines()
-                GameTooltip:AddLine("Item tooltip unavailable - refresh the check when item data is loaded.", 1, 0.78, 0.2, true)
+                GameTooltip:AddLine(L("Item tooltip unavailable - refresh the check when item data is loaded."), 1, 0.78, 0.2, true)
             end
             GameTooltip:Show()
         end)
@@ -135,12 +151,12 @@ local function AddLine(frame, label, text, tone, item)
     end
     row.bg:SetTexture(1, 1, 1, index % 2 == 0 and 0.04 or 0)
     row.label:SetTextColor(1, 0.82, 0)
-    row.label:SetText(label)
+    row.label:SetText(L(label))
     local hasIcon = SetItemIcon(row, item)
     row.value:ClearAllPoints()
     row.value:SetPoint("TOPLEFT", hasIcon and 168 or 132, -4)
     row.value:SetWidth(CONTENT_WIDTH - (hasIcon and 176 or 140))
-    row.value:SetText(text or "Unknown")
+    row.value:SetText(D(text or "Unknown"))
     row.value:SetTextColor(unpack(COLORS[tone or "normal"]))
     local height = math.max(row.label:GetStringHeight(), row.value:GetStringHeight(), hasIcon and 28 or 16) + 12
     row:ClearAllPoints()
@@ -162,25 +178,25 @@ local function RenderDetail(frame)
     local entry = frame.entry
     if not entry then return end
     frame.lineCount, frame.lineOffset = 0, 0
-    frame.status:SetText(frame.message or "Waiting for inspect data...")
+    frame.status:SetText(D(frame.message or "Waiting for inspect data..."))
     local gear = entry.gear
     local complete = gear and gear.scanned
     local name = entry.fullName .. (entry.online == false and " (off)" or entry.dead and " (dead)" or "")
-    AddSection(frame, "PLAYER")
+    AddSection(frame, L("PLAYER"))
     AddLine(frame, "Name", name)
-    AddLine(frame, "Class / level", (entry.className or "Unknown") .. " / " .. (entry.level or "?"))
-    AddLine(frame, "Spec / role", (entry.specName or "Unavailable") .. " / " .. (ROLE_NAMES[entry.role] or "Unknown"))
+    AddLine(frame, "Class / level", (entry.className or L("Unknown")) .. " / " .. (entry.level or "?"))
+    AddLine(frame, "Spec / role", (entry.specName or L("Unavailable")) .. " / " .. L(ROLE_NAMES[entry.role] or "Unknown"))
     if entry.guild then AddLine(frame, "Guild", entry.guild) end
     if entry.professionsKnown and type(entry.professions) == "table" then
         local names = {}
         local catalog = ARC.GEAR_RULES and ARC.GEAR_RULES.professions or {}
         for id in pairs(entry.professions) do names[#names + 1] = catalog[id] or tostring(id) end
         table.sort(names)
-        AddLine(frame, "Professions", #names > 0 and table.concat(names, ", ") or "None reported")
+        AddLine(frame, "Professions", #names > 0 and table.concat(names, ", ") or L("None reported"))
     end
     local threshold = gear and gear.minItemLevel or (ARC_DB and ARC_DB.minItemLevel) or 450
-    AddLine(frame, "Equipped iLvl", (complete and ("~" .. tostring(gear.averageItemLevel)) or "Loading") ..
-        "   |   Minimum per item: " .. threshold)
+    AddLine(frame, "Equipped iLvl", (complete and ("~" .. tostring(gear.averageItemLevel)) or L("Loading")) ..
+        L("   |   Minimum per item: %d", threshold))
 
     local problemSlots = 0
     if gear then
@@ -194,15 +210,15 @@ local function RenderDetail(frame)
     if not complete then
         summary, tone = "Incomplete equipment data - no final verdict", "warn"
     elseif gear.issueCount > 0 then
-        summary, tone = gear.issueCount .. " gear issue(s)", "bad"
-        if problemSlots > 0 then summary = summary .. " in " .. problemSlots .. " slot(s)" end
-        if not gear.auditComplete then summary = summary .. "; some checks unverified" end
+        summary, tone = L("%d gear issue(s)", gear.issueCount), "bad"
+        if problemSlots > 0 then summary = summary .. " " .. L("in %d slot(s)", problemSlots) end
+        if not gear.auditComplete then summary = summary .. L("; some checks unverified") end
     elseif not gear.auditComplete then
         summary, tone = "No confirmed issues; some checks are unverified", "warn"
     else
         summary, tone = "No gear issues found under ARC PvE rules", "good"
     end
-    AddSection(frame, "GEAR CHECK", summary, tone)
+    AddSection(frame, L("GEAR CHECK"), L(summary), tone)
 
     if problemSlots > 0 then
         for _, item in ipairs(gear.slots) do
@@ -216,15 +232,15 @@ local function RenderDetail(frame)
     end
 
     if gear and gear.professionIssues and #gear.professionIssues > 0 then
-        AddSection(frame, "PROFESSION BONUSES", "Confirmed professions with missing visible gear bonuses", "bad")
+        AddSection(frame, L("PROFESSION BONUSES"), L("Confirmed professions with missing visible gear bonuses"), "bad")
         for _, message in ipairs(gear.professionIssues) do AddLine(frame, "Profession", message, "bad") end
     end
 
     if not complete or (gear.unverified and #gear.unverified > 0) then
-        AddSection(frame, "UNVERIFIED", "Not counted as a passed check", "warn")
+        AddSection(frame, L("UNVERIFIED"), L("Not counted as a passed check"), "warn")
         if not complete then
-            local pending = gear and #gear.pendingSlots > 0 and table.concat(gear.pendingSlots, ", ") or "Equipment"
-            AddLine(frame, "Item data", pending .. ": waiting for complete inspect data. Empty-looking slots are not confirmed.", "warn")
+            local pending = gear and #gear.pendingSlots > 0 and LocalizedList(gear.pendingSlots) or L("Equipment")
+            AddLine(frame, "Item data", L("%s: waiting for complete inspect data. Empty-looking slots are not confirmed.", pending), "warn")
         end
         if gear then
             for _, message in ipairs(gear.unverified or {}) do AddLine(frame, "Check", message, "warn") end
@@ -234,14 +250,14 @@ local function RenderDetail(frame)
     if ARC.GetTalentStatus then
         local status, talentTone, details = ARC:GetTalentStatus(entry)
         if status ~= "OK" and status ~= "-" then
-            AddSection(frame, "TALENTS", talentTone == "bad" and "Empty available talent slots" or "Unverified talent data", talentTone)
+            AddSection(frame, L("TALENTS"), L(talentTone == "bad" and "Empty available talent slots" or "Unverified talent data"), talentTone)
             for _, detail in ipairs(details) do AddLine(frame, "Talent", detail, talentTone) end
         end
     end
     if ARC.GetSelfBuffStatus then
         local status, buffTone, details = ARC:GetSelfBuffStatus(entry)
         if status ~= "OK" and status ~= "-" then
-            AddSection(frame, "SELF / TANK / PET", "Snapshot of class readiness", buffTone)
+            AddSection(frame, L("SELF / TANK / PET"), L("Snapshot of class readiness"), buffTone)
             for _, detail in ipairs(details) do AddLine(frame, "Self buff", detail, buffTone) end
         end
     end
@@ -271,7 +287,7 @@ local function BuildDetailFrame()
     f:SetBackdropColor(0, 0, 0, 0.9)
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 14, -12)
-    title:SetText("ARC - PvE gear check")
+    title:SetText(L("ARC - PvE gear check"))
     f.status = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     f.status:SetPoint("TOPLEFT", 14, -38)
     f.status:SetWidth(WIDTH - 28)
@@ -290,16 +306,21 @@ local function BuildDetailFrame()
     f.refresh = CreateFrame("Button", nil, f, "UIPanelButtonTemplate")
     f.refresh:SetSize(120, 22)
     f.refresh:SetPoint("BOTTOMLEFT", 14, 14)
-    f.refresh:SetText("Refresh")
+    f.refresh:SetText(L("Refresh"))
     f.refresh:SetScript("OnClick", function()
         local unit = ResolveUnit(f.entry)
         if unit then
             ARC:ShowPlayerCheck(unit, f.entry.guid)
         else
-            f.message = "Select the same player again before refreshing. The displayed snapshot is unchanged."
+            f.message = L("Select the same player again before refreshing. The displayed snapshot is unchanged.")
             RenderDetail(f)
         end
     end)
+    if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(f, function()
+        title:SetText(L("ARC - PvE gear check"))
+        f.refresh:SetText(L("Refresh"))
+        if f:IsShown() then RenderDetail(f) end
+    end) end
     f.fonts, f.buttons = { title, f.status, f.refresh:GetFontString() }, { f.refresh }
     f:SetScript("OnHide", function(self)
         for _, row in ipairs(self.lines) do HideItemTooltip(row.itemIcon) end
@@ -313,12 +334,12 @@ end
 
 function ARC:ShowPlayerCheck(unit, expectedGUID)
     if not unit or not UnitExists(unit) or (UnitIsPlayer and not UnitIsPlayer(unit)) then
-        print("|cff33ff99ARC:|r Select an inspectable player first.")
+        print("|cff33ff99ARC:|r " .. L("Select an inspectable player first."))
         return
     end
     local guid = UnitGUID(unit)
     if not guid or (expectedGUID and guid ~= expectedGUID) then
-        print("|cff33ff99ARC:|r The inspected player changed. Reopen their inspect window.")
+        print("|cff33ff99ARC:|r " .. L("The inspected player changed. Reopen their inspect window."))
         return
     end
     local isSelf = UnitIsUnit(unit, "player")
@@ -346,7 +367,7 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
     f.session = {}
     local session = f.session
     f.entry, f.busy, f.capturedAt = entry, true, nil
-    f.message = "Waiting for inspect and item data..."
+    f.message = L("Waiting for inspect and item data...")
     f.refresh:Disable()
     f:Show()
     f.scroll:SetVerticalScroll(0)
@@ -361,8 +382,8 @@ function ARC:ShowPlayerCheck(unit, expectedGUID)
         f.busy, f.capturedAt = false, GetTime()
         f.refresh:Enable()
         f.message = entry.gear and entry.gear.validationPending and
-            "Local snapshot captured; some item data is still loading. Use Refresh to update." or
-            "Local snapshot captured. Use Refresh after equipment changes."
+            L("Local snapshot captured; some item data is still loading. Use Refresh to update.") or
+            L("Local snapshot captured. Use Refresh after equipment changes.")
         RenderDetail(f)
         return
     end
@@ -390,13 +411,13 @@ function ARC:UpdatePlayerCheck()
             available = ok and result
         end
         local age = math.floor(GetTime() - f.capturedAt)
-        f.message = (available and "Snapshot" or "Player unavailable - saved snapshot") .. " (" .. age .. "s old). Refresh to update."
+        f.message = L("%s (%ds old). Refresh to update.", L(available and "Snapshot" or "Player unavailable - saved snapshot"), age)
         if f.entry.gear and f.entry.gear.minItemLevel ~= ARC_DB.minItemLevel then
-            f.message = "Minimum iLvl changed - Refresh to apply it. " .. f.message
+            f.message = L("Minimum iLvl changed - Refresh to apply it. %s", f.message)
         end
     elseif f.busy then
         local request = self.inspectRequest
-        f.message = request and request.ready and "Inspect received; waiting for complete item data..." or "Waiting for inspect response..."
+        f.message = L(request and request.ready and "Inspect received; waiting for complete item data..." or "Waiting for inspect response...")
     end
     RenderDetail(f)
 end
@@ -431,17 +452,17 @@ function ARC:CreatePlayerCheckMenuItem(unit, expectedFullName)
     if not guid then return nil end
     local selected = { unit = unit, guid = guid }
     return {
-        text = "ARC Check", notCheckable = true,
+        text = L("ARC Check"), notCheckable = true,
         disabled = not CanCheckMenuUnit(unit), tooltipOnButton = true,
-        tooltipTitle = "ARC Check",
+        tooltipTitle = L("ARC Check"),
         tooltipText = UnitIsUnit(unit, "player") and
-            "Local PvE gear and readiness check for your character." or
-            "PvE gear check. Requires this player to be online and in inspect range.",
+            L("Local PvE gear and readiness check for your character.") or
+            L("PvE gear check. Requires this player to be online and in inspect range."),
         func = function()
             if CloseDropDownMenus then CloseDropDownMenus() end
             local current = ResolveUnit(selected)
             if not current or not CanCheckMenuUnit(current) then
-                print("|cff33ff99ARC:|r That player changed or is outside inspect range. Reopen their menu nearby.")
+                print("|cff33ff99ARC:|r " .. L("That player changed or is outside inspect range. Reopen their menu nearby."))
                 return
             end
             ARC:ShowPlayerCheck(current, guid)
@@ -497,7 +518,7 @@ function ARC:AttachInspectCheckButton()
     local frame = InspectFrame
     local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     button:SetSize(74, 18)
-    button:SetText("ARC Check")
+    button:SetText(L("ARC Check"))
     frame.arcCheckButton = button
     local function LayoutHeader()
         -- Inside the title bar, leaving the rightmost 30px for Close and the
@@ -536,7 +557,7 @@ function ARC:AttachCharacterCheckButton()
     local frame = CharacterFrame
     local button = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
     button:SetSize(74, 18)
-    button:SetText("ARC Check")
+    button:SetText(L("ARC Check"))
     frame.arcCheckButton = button
     local function LayoutHeader()
         -- Place the action immediately after the portrait and reserve the

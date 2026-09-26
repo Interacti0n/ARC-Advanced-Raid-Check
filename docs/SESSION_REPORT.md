@@ -17,6 +17,8 @@ session cannot be deleted.
 - join/leave attendance time and boss-pull participation per player;
 - online/offline time, eligible trash time and trash inactivity per player;
 - boss pulls, duration, success and first death/time from encounter/combat-log events;
+- failed pulls lasting no more than 60 seconds with at most five distinct player
+  deaths are labelled **Reset** instead of **Wipe**; they remain visible as attempts;
 - boss, trash and other/unknown death totals, plus first-death counts;
 - the number of completed ready checks, without retaining their issue lists;
 - number and duration of trash combats;
@@ -109,7 +111,8 @@ the Export tab and the normal operating-system copy shortcut.
    timer resets while preserving the already accumulated interval.
 3. Repeat with a healer on harmless trash and a hunter pet to understand the
    estimate and confirm that pet-only activity does not credit its owner.
-4. Pull, wipe and kill a boss; verify duration, first death and death categories.
+4. Reset a boss within 60 seconds with at most five player deaths, then record a
+   longer wipe and a kill; verify Reset/Wipe/Kill, duration and death categories.
 5. Verify Players sorting and the green <=5%, yellow <=30%, red >30% thresholds.
 6. Complete several ready checks and verify only their count is retained.
 7. `/reload` during a session, then leave for 30 seconds and verify automatic end.

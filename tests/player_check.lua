@@ -229,13 +229,15 @@ end
 assert(files[1] == "ARC_Core.lua" and files[#files] == "ARC.lua", "Invalid TOC load order")
 assert(seen["ARC_PlayerCheck.lua"], "Player check must be included in ARC.toc")
 for _, file in ipairs(files) do
-    if not staleTOC or (file ~= "ARC_PlayerCheck.lua" and file ~= "ARC_Session.lua") then
+    if not staleTOC or (file ~= "ARC_Localization.lua" and file ~= "ARC_Locales_SK.lua" and
+        file ~= "ARC_Locales_CZ.lua" and file ~= "ARC_PlayerCheck.lua" and file ~= "ARC_Session.lua") then
         assert(loadfile(file))("ARC")
     end
 end
 assert(ARC.VERSION == tocVersion, "Core and TOC versions must agree")
 assert(ARC.NAME == "Advanced Raid Check" and tocText:find(ARC.NAME, 1, true), "Core and TOC display names must agree")
 assert(tocText:find("## SavedVariables: ARC_DB", 1, true) and ARC.COMM_PREFIX == "ARC1", "Rename must preserve saved settings and wire compatibility")
+assert(tocText:find("## SavedVariablesPerCharacter: ARC_CharDB", 1, true), "Language preference must be stored per character")
 local originalPrint, warnings = print, {}
 if staleTOC then print = function(message) warnings[#warnings + 1] = message end end
 ARCEventFrame.scripts.OnEvent(ARCEventFrame, "ADDON_LOADED", "ARC")
@@ -325,6 +327,22 @@ local passed = 0
 local function test(name, fn)
     fn(); passed = passed + 1; print("PASS " .. name)
 end
+
+test("localization follows the client by default and persists a per-character override", function()
+    assert(ARC_CharDB.language == "auto")
+    local preference, effective = ARC:GetLanguage()
+    assert(preference == "auto" and effective == "enGB")
+    assert(ARC:Text("Language") == "Language")
+    assert(ARC:SetLanguage("skSK") and ARC_CharDB.language == "skSK")
+    assert(ARC:Text("Language") == "Jazyk" and ARCOptionsLanguage:GetText() == "Slovenčina")
+    assert(InspectFrame.arcCheckButton:GetText() == "ARC kontrola")
+    assert(ARC:LocalizeDiagnostic("Head: Missing enchant") == "Hlava: Chýbajúci enchant")
+    assert(ARC:SetLanguage("csCZ") and ARC:Text("Players") == "Hráči")
+    assert(ARC:SetLanguage("enUS") and select(2, ARC:GetLanguage()) == "enGB")
+    assert(not ARC:SetLanguage("invalid") and ARC_CharDB.language == "enUS")
+    assert(ARC:SetLanguage("auto") and ARC_CharDB.language == "auto")
+    assert(ARC:Text("Untranslated sentinel") == "Untranslated sentinel")
+end)
 
 test("inspect check is inside the header with space reserved for title and Close", function()
     start()
@@ -2236,6 +2254,59 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
     end)
     units.party1, units.partypet1, alice.afk = nil, nil, nil
     ARC_DB.sessions = {}
+end)
+
+test("short low-death boss failures are labelled resets instead of wipes", function()
+    menuStart(); ARC:Hide()
+    ARC.activeSession, ARC_DB.activeSession, ARC.sessionActivity = nil, nil, nil
+    ARC.currentEncounter, ARC.trashCombatStartedAt = nil, nil
+    ARC_DB.sessions = {}
+    units.party1 = alice
+    alice.dead, alice.online, alice.visible = false, true, true
+    withGlobals({
+        IsInGroup = function() return true end,
+        GetNumGroupMembers = function() return 2 end,
+        GetInstanceInfo = function() return "Siege of Orgrimmar", "raid", 5 end,
+    }, function()
+        assert(ARC:StartRaidSession())
+
+        ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
+        now = now + 60
+        ARC.currentEncounter.deaths = {
+            { name="A" }, { name="B" }, { name="C" }, { name="D" }, { name="E" },
+            { name="A" },
+        }
+        ARC:SessionEncounterEnd(715, "Sha of Pride", 5, 10, 0)
+        assert(ARC.activeSession.pulls[1].reset, "A <=60s pull with <=5 distinct deaths must be a reset")
+
+        ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
+        now = now + 61
+        ARC:SessionEncounterEnd(715, "Sha of Pride", 5, 10, 0)
+        assert(not ARC.activeSession.pulls[2].reset, "A pull over 60s must remain a wipe")
+
+        ARC:SessionEncounterStart(715, "Sha of Pride", 5, 10)
+        now = now + 30
+        ARC.currentEncounter.deaths = {
+            { name="A" }, { name="B" }, { name="C" }, { name="D" }, { name="E" }, { name="F" },
+        }
+        ARC:SessionEncounterEnd(715, "Sha of Pride", 5, 10, 0)
+        assert(not ARC.activeSession.pulls[3].reset, "Six distinct deaths must remain a wipe")
+
+        local report = ARC:GetSessionReportText(ARC.activeSession)
+        assert(report:find("Sha of Pride | RESET | 1m 00s", 1, true))
+        assert(report:find("Sha of Pride | WIPE | 1m 01s", 1, true))
+
+        ARC:ShowSessionReport()
+        ARC.sessionFrame.historyOffset = 0
+        ARC.sessionFrame.tabs.bosses.scripts.OnClick()
+        ARC.sessionFrame.bossRows[1].scripts.OnClick(ARC.sessionFrame.bossRows[1])
+        assert(ARC.sessionFrame.bossRows[2].cells[3]:GetText() == "RESET")
+        assert(ARC.sessionFrame.bossRows[3].cells[3]:GetText() == "WIPE")
+        assert(ARC.sessionFrame.bossRows[4].cells[3]:GetText() == "WIPE")
+        ARC.sessionFrame:Hide()
+    end)
+    ARC.activeSession, ARC_DB.activeSession, ARC.currentEncounter = nil, nil, nil
+    ARC_DB.sessions, units.party1 = {}, nil
 end)
 
 test("session loot groups boss rewards, bonus rolls and epic trash with exact tooltips", function()

@@ -173,7 +173,9 @@ sessions. **Delete Report** permanently removes the selected completed report
 after confirmation; ARC never allows deletion of the active session.
 
 The **Players** table shows attendance, offline time, trash inactivity, boss
-pulls and deaths. Trash idle is green through 5%, yellow through 30% and red
+pulls and deaths. A failed boss pull lasting at most 60 seconds with no more
+than five distinct player deaths is shown as **Reset** rather than **Wipe**.
+Trash idle is green through 5%, yellow through 30% and red
 above 30% of eligible trash time. Hover Deaths for boss/trash/other and first-
 death totals. **Bosses** groups and expands attempts; **Export** provides the
 copyable summary. **Loot** groups chronological boss rewards, bonus-roll
@@ -203,9 +205,12 @@ See [Session reports](SESSION_REPORT.md) for exact timing and caveats.
 | `/arc session end` | Finish and save the active session |
 | `/arc help` | Print the command list |
 
-Settings are stored account-wide in `ARC_DB`. Updates migrate older settings in
-place and preserve session history. Installing an older ARC over a newer saved
-database does not downgrade its schema or discard unknown data.
+Most settings are stored account-wide in `ARC_DB`. The language choice is
+stored per character in `ARC_CharDB`: Automatic follows a supported game-client
+locale and otherwise uses English; English (`enGB` and `enUS`), Slovak and
+Czech are available. Updates migrate older account settings in place and
+preserve session history. Installing an older ARC over a newer saved database
+does not downgrade its schema or discard unknown data.
 
 ## Documentation map
 
