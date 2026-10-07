@@ -110,6 +110,7 @@ end
 local function TryNextInspect()
     local now = GetTime()
     local request = ARC.inspectRequest
+    if ARC.demoRoster and (not request or request.kind ~= "manual") then return end
     if not request then
         -- An open Blizzard inspect window has priority over background scans.
         if InspectFrame and InspectFrame:IsShown() then return end

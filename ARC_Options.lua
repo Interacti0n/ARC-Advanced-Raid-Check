@@ -136,24 +136,62 @@ local function SetSliderLabels(slider, low, high, text)
     if textFS then textFS:SetText(text) end
 end
 
+local function SkinOptionsPanelElvUI(panel)
+    if not panel or panel.elvuiSkinned or not (IsAddOnLoaded and IsAddOnLoaded("ElvUI")) or not ElvUI or not ElvUI[1] then return end
+    local E = ElvUI[1]
+    if not E.GetModule then return end
+    local ok, skins = pcall(E.GetModule, E, "Skins")
+    if not ok or not skins then return end
+    for _, button in ipairs(panel.skinButtons or {}) do
+        if skins.HandleButton then pcall(skins.HandleButton, skins, button) end
+    end
+    for _, checkbox in ipairs(panel.skinCheckBoxes or {}) do
+        if skins.HandleCheckBox then pcall(skins.HandleCheckBox, skins, checkbox) end
+    end
+    for _, input in ipairs(panel.skinEditBoxes or {}) do
+        if skins.HandleEditBox then pcall(skins.HandleEditBox, skins, input) end
+    end
+    for _, slider in ipairs(panel.skinSliders or {}) do
+        if skins.HandleSliderFrame then pcall(skins.HandleSliderFrame, skins, slider)
+        elseif skins.HandleSlider then pcall(skins.HandleSlider, skins, slider) end
+    end
+    if panel.scroll and skins.HandleScrollBar then
+        local bar = _G[panel.scroll:GetName() .. "ScrollBar"]
+        if bar then pcall(skins.HandleScrollBar, skins, bar) end
+    end
+    panel.elvuiSkinned = true
+end
+
+function ARC:TrySkinOptionsElvUI()
+    SkinOptionsPanelElvUI(self.optionsPanel)
+    SkinOptionsPanelElvUI(self.raidOptionsPanel)
+end
+
 function ARC:CreateOptionsPanel()
     local panel = CreateFrame("Frame", "ARCOptionsPanel", UIParent)
     panel.name = "ARC"
+    local scroll = CreateFrame("ScrollFrame", "ARCOptionsScroll", panel, "UIPanelScrollFrameTemplate")
+    scroll:SetPoint("TOPLEFT", 0, 0)
+    scroll:SetPoint("BOTTOMRIGHT", -30, 0)
+    local content = CreateFrame("Frame", "ARCOptionsContent", scroll)
+    content:SetSize(520, 920)
+    scroll:SetScrollChild(content)
+    panel.scroll = scroll
 
-    local title = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+    local title = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -16)
     title:SetText("ARC - " .. ARC.NAME)
 
-    local subtitle = panel:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    local subtitle = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -8)
     subtitle:SetWidth(500)
     subtitle:SetJustifyH("LEFT")
-    local languageLabel = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+    local languageLabel = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
     languageLabel:SetPoint("TOPLEFT", subtitle, "BOTTOMLEFT", 0, -18)
-    local languageButton = CreateFrame("Button", "ARCOptionsLanguage", panel, "UIPanelButtonTemplate")
+    local languageButton = CreateFrame("Button", "ARCOptionsLanguage", content, "UIPanelButtonTemplate")
     languageButton:SetSize(220, 24)
     languageButton:SetPoint("TOPLEFT", languageLabel, "BOTTOMLEFT", -2, -6)
-    local languageMenu = CreateFrame("Frame", "ARCOptionsLanguageMenu", panel, "UIDropDownMenuTemplate")
+    local languageMenu = CreateFrame("Frame", "ARCOptionsLanguageMenu", content, "UIDropDownMenuTemplate")
     local function LanguageName(code)
         for _, choice in ipairs(ARC.LOCALE_CHOICES or {}) do
             if choice.code == code then return L(choice.name) end
@@ -177,23 +215,23 @@ function ARC:CreateOptionsPanel()
         EasyMenu(menu, languageMenu, self, 0, 0, "MENU")
     end)
 
-    local manualCB = CreateFrame("CheckButton", "ARCOptionsManual", panel, "InterfaceOptionsCheckButtonTemplate")
+    local manualCB = CreateFrame("CheckButton", "ARCOptionsManual", content, "InterfaceOptionsCheckButtonTemplate")
     manualCB:SetPoint("TOPLEFT", languageButton, "BOTTOMLEFT", 0, -12)
     manualCB:SetScript("OnClick", function(self) ARC:SetManualMode(self:GetChecked()) end)
 
-    local autohideCB = CreateFrame("CheckButton", "ARCOptionsAutoHide", panel, "InterfaceOptionsCheckButtonTemplate")
+    local autohideCB = CreateFrame("CheckButton", "ARCOptionsAutoHide", content, "InterfaceOptionsCheckButtonTemplate")
     autohideCB:SetPoint("TOPLEFT", manualCB, "BOTTOMLEFT", 0, -4)
     autohideCB:SetScript("OnClick", function(self)
         ARC_DB.autoHide = self:GetChecked() and true or false
     end)
 
-    local lockCB = CreateFrame("CheckButton", "ARCOptionsLock", panel, "InterfaceOptionsCheckButtonTemplate")
+    local lockCB = CreateFrame("CheckButton", "ARCOptionsLock", content, "InterfaceOptionsCheckButtonTemplate")
     lockCB:SetPoint("TOPLEFT", autohideCB, "BOTTOMLEFT", 0, -4)
     lockCB:SetScript("OnClick", function(self)
         ARC_DB.locked = self:GetChecked() and true or false
     end)
 
-    local minimapCB = CreateFrame("CheckButton", "ARCOptionsMinimap", panel, "InterfaceOptionsCheckButtonTemplate")
+    local minimapCB = CreateFrame("CheckButton", "ARCOptionsMinimap", content, "InterfaceOptionsCheckButtonTemplate")
     minimapCB:SetPoint("TOPLEFT", lockCB, "BOTTOMLEFT", 0, -4)
     minimapCB:SetScript("OnClick", function(self)
         ARC_DB.minimap.hide = not self:GetChecked()
@@ -202,7 +240,7 @@ function ARC:CreateOptionsPanel()
         end
     end)
 
-    local autoSessionCB = CreateFrame("CheckButton", "ARCOptionsAutoSessions", panel, "InterfaceOptionsCheckButtonTemplate")
+    local autoSessionCB = CreateFrame("CheckButton", "ARCOptionsAutoSessions", content, "InterfaceOptionsCheckButtonTemplate")
     autoSessionCB:SetPoint("TOPLEFT", minimapCB, "BOTTOMLEFT", 0, -4)
     autoSessionCB:SetScript("OnClick", function(self)
         ARC_DB.autoSessions = self:GetChecked() and true or false
@@ -212,14 +250,14 @@ function ARC:CreateOptionsPanel()
         if ARC.UpdateAutoSession then ARC:UpdateAutoSession() end
     end)
 
-    local scaleSlider = CreateFrame("Slider", "ARCOptionsScale", panel, "OptionsSliderTemplate")
+    local scaleSlider = CreateFrame("Slider", "ARCOptionsScale", content, "OptionsSliderTemplate")
     scaleSlider:SetPoint("TOPLEFT", autoSessionCB, "BOTTOMLEFT", 6, -28)
     scaleSlider:SetWidth(200)
     scaleSlider:SetMinMaxValues(0.6, 1.5)
     scaleSlider:SetValueStep(0.05)
     SetSliderLabels(scaleSlider, "0.6", "1.5", L("Window Scale"))
 
-    local scaleValueText = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local scaleValueText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     scaleValueText:SetPoint("LEFT", scaleSlider, "RIGHT", 12, 0)
 
     scaleSlider:SetScript("OnValueChanged", function(self, value)
@@ -230,18 +268,34 @@ function ARC:CreateOptionsPanel()
         scaleValueText:SetText(string.format("%.2f", value))
     end)
 
-    local ilvlLabel = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    local opacitySlider = CreateFrame("Slider", "ARCOptionsOpacity", content, "OptionsSliderTemplate")
+    opacitySlider:SetPoint("LEFT", scaleSlider, "RIGHT", 82, 0)
+    opacitySlider:SetWidth(180)
+    opacitySlider:SetMinMaxValues(20, 100)
+    opacitySlider:SetValueStep(5)
+    if opacitySlider.SetObeyStepOnDrag then opacitySlider:SetObeyStepOnDrag(true) end
+    SetSliderLabels(opacitySlider, "20%", "100%", L("Window Opacity"))
+
+    local opacityValueText = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    opacityValueText:SetPoint("LEFT", opacitySlider, "RIGHT", 10, 0)
+    opacitySlider:SetScript("OnValueChanged", function(_, value)
+        local percent = math.max(20, math.min(100, Round(tonumber(value) or 70)))
+        ARC:SetWindowOpacity(percent / 100)
+        opacityValueText:SetText(percent .. "%")
+    end)
+
+    local ilvlLabel = content:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     ilvlLabel:SetPoint("TOPLEFT", scaleSlider, "BOTTOMLEFT", 0, -30)
-    local ilvlInput = CreateFrame("EditBox", "ARCOptionsMinIlvl", panel, "InputBoxTemplate")
+    local ilvlInput = CreateFrame("EditBox", "ARCOptionsMinIlvl", content, "InputBoxTemplate")
     ilvlInput:SetSize(80, 22)
     ilvlInput:SetPoint("TOPLEFT", ilvlLabel, "BOTTOMLEFT", 4, -8)
     ilvlInput:SetAutoFocus(false)
     ilvlInput:SetNumeric(true)
     ilvlInput:SetMaxLetters(3)
-    local ilvlApply = CreateFrame("Button", "ARCOptionsMinIlvlApply", panel, "UIPanelButtonTemplate")
+    local ilvlApply = CreateFrame("Button", "ARCOptionsMinIlvlApply", content, "UIPanelButtonTemplate")
     ilvlApply:SetSize(70, 22)
     ilvlApply:SetPoint("LEFT", ilvlInput, "RIGHT", 12, 0)
-    local ilvlMessage = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    local ilvlMessage = content:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ilvlMessage:SetPoint("TOPLEFT", ilvlInput, "BOTTOMLEFT", -4, -8)
     local function ApplyItemLevel()
         local ok, reason = ARC:SetMinimumItemLevel(ilvlInput:GetText())
@@ -263,7 +317,7 @@ function ARC:CreateOptionsPanel()
         ilvlMessage:SetTextColor(0.9, 0.9, 0.9)
     end)
 
-    local resetBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local resetBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     resetBtn:SetSize(160, 22)
     resetBtn:SetPoint("TOPLEFT", ilvlMessage, "BOTTOMLEFT", -6, -16)
     resetBtn:SetScript("OnClick", function()
@@ -274,23 +328,103 @@ function ARC:CreateOptionsPanel()
         end
     end)
 
-    local raidBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local raidBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     raidBtn:SetSize(160, 22)
     raidBtn:SetPoint("LEFT", resetBtn, "RIGHT", 12, 0)
     raidBtn:SetScript("OnClick", function() ARC:OpenRaidOptions() end)
 
-    local sessionBtn = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    local sessionBtn = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
     sessionBtn:SetSize(130, 22)
     sessionBtn:SetPoint("LEFT", raidBtn, "RIGHT", 12, 0)
     sessionBtn:SetScript("OnClick", function()
         if ARC.ShowSessionReport then ARC:ShowSessionReport() end
     end)
 
-    local hint = panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    hint:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 6, -20)
+    local demoBtn = CreateFrame("Button", "ARCOptionsDemoRoster", content, "UIPanelButtonTemplate")
+    demoBtn:SetSize(180, 22)
+    demoBtn:SetPoint("TOPLEFT", resetBtn, "BOTTOMLEFT", 0, -12)
+    demoBtn:SetScript("OnClick", function()
+        if ARC.demoRoster then
+            ARC:ClearDemoRoster()
+            ARC:Show()
+        else
+            ARC:LoadDemoRoster()
+        end
+        if panel.refresh then panel.refresh() end
+        if InterfaceOptionsFrame and InterfaceOptionsFrame.Hide then InterfaceOptionsFrame:Hide() end
+    end)
+
+    local hint = content:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("TOPLEFT", demoBtn, "BOTTOMLEFT", 6, -16)
     hint:SetWidth(480)
     hint:SetJustifyH("LEFT")
+    -- The outer frame remains the registered category; controls are created
+    -- directly on the scroll child, including FontStrings on older clients.
+    local function Place(widget, x, y)
+        widget:ClearAllPoints()
+        widget:SetPoint("TOPLEFT", content, "TOPLEFT", x, -y)
+    end
+    local sections = {}
+    local function Section(key, y)
+        local label = content:CreateFontString(nil, "ARTWORK", "GameFontNormal")
+        Place(label, 16, y)
+        sections[#sections + 1] = {label=label, key=key}
+    end
+    Section("General", 70)
+    Place(languageLabel, 16, 94); Place(languageButton, 16, 112)
+    Place(manualCB, 16, 145); Place(autohideCB, 16, 175)
+    Section("Appearance", 216)
+    Place(lockCB, 16, 240); Place(minimapCB, 16, 268)
+    Place(scaleSlider, 22, 329)
+    Section("Raid checks", 376)
+    Place(ilvlLabel, 16, 405); Place(ilvlInput, 20, 430)
+    Place(ilvlMessage, 16, 462)
+    Section("Session tracking", 504)
+    Place(autoSessionCB, 16, 532)
+    local trashInputs = {}
+    for index, key in ipairs({ "joinGrace", "activeGap", "reviveGrace" }) do
+        local x = 16 + (index - 1) * 164
+        local label = content:CreateFontString(nil, "ARTWORK", "GameFontNormalSmall")
+        Place(label, x, 574); label:SetWidth(154); label:SetJustifyH("LEFT"); label:SetWordWrap(true)
+        local input = CreateFrame("EditBox", "ARCOptionsTrash" .. key, content, "InputBoxTemplate")
+        input:SetSize(70, 22); Place(input, x + 4, 612)
+        input:SetAutoFocus(false); input:SetNumeric(true); input:SetMaxLetters(3)
+        trashInputs[key] = input
+        sections[#sections + 1] = {label=label, key=({joinGrace="Join grace (seconds)", activeGap="Activity gap (seconds)", reviveGrace="Revival grace (seconds)"})[key]}
+    end
+    local trashApply = CreateFrame("Button", "ARCOptionsTrashApply", content, "UIPanelButtonTemplate")
+    trashApply:SetSize(75, 22); Place(trashApply, 430, 612)
+    local trashMessage = content:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
+    Place(trashMessage, 16, 646); trashMessage:SetWidth(490); trashMessage:SetJustifyH("LEFT"); trashMessage:SetWordWrap(true)
+    local function ResetTrashInputs()
+        for key, input in pairs(trashInputs) do input:SetText(tostring(ARC_DB.trashSettings[key])); input:ClearFocus() end
+    end
+    local function ApplyTrashSettings()
+        local values = {}
+        for key, input in pairs(trashInputs) do
+            local value = tonumber(input:GetText())
+            local min, max = key == "reviveGrace" and 0 or 1, key == "reviveGrace" and 120 or 60
+            if not value or value ~= math.floor(value) or value < min or value > max then
+                trashMessage:SetText(L("Join/activity: 1-60s; revival: 0-120s. No changes saved."))
+                trashMessage:SetTextColor(1, 0.35, 0.3)
+                return
+            end
+            values[key] = value
+        end
+        for key, value in pairs(values) do ARC_DB.trashSettings[key] = value end
+        ResetTrashInputs()
+        trashMessage:SetText(L("Saved for the next session. The current session keeps its original limits."))
+        trashMessage:SetTextColor(0.3, 1, 0.3)
+    end
+    trashApply:SetScript("OnClick", ApplyTrashSettings)
+    for _, input in pairs(trashInputs) do
+        input:SetScript("OnEnterPressed", ApplyTrashSettings)
+        input:SetScript("OnEscapePressed", ResetTrashInputs)
+    end
+    Place(resetBtn, 16, 696); Place(demoBtn, 16, 734); Place(hint, 16, 774)
     local function RefreshText()
+        for _, section in ipairs(sections) do section.label:SetText(L(section.key)) end
+        trashApply:SetText(L("Apply"))
         subtitle:SetText(L("Version %s  -  see /arc help for slash commands", ARC.VERSION))
         languageLabel:SetText(L("Language"))
         local preference = ARC.GetLanguage and ARC:GetLanguage() or "auto"
@@ -301,21 +435,29 @@ function ARC:CreateOptionsPanel()
         SetCheckButtonText(minimapCB, L("Show minimap button"))
         SetCheckButtonText(autoSessionCB, L("Automatically track sessions inside raid instances"))
         SetSliderLabels(scaleSlider, "0.6", "1.5", L("Window Scale"))
+        SetSliderLabels(opacitySlider, "20%", "100%", L("Window Opacity"))
         ilvlLabel:SetText(L("Minimum Item Level"))
         ilvlApply:SetText(L("Apply"))
         resetBtn:SetText(L("Reset Window Position"))
         raidBtn:SetText(L("Raid Setup Checks"))
         sessionBtn:SetText(L("Session Report"))
+        demoBtn:SetText(L(ARC.demoRoster and "Exit Demo Roster" or "Load Random 10-player Demo"))
         hint:SetText(L("Tip: right-click a player row for Whisper / Inspect / ARC Check / Remind. Session Report tracks attendance, pulls, deaths and estimated trash inactivity. Talents = empty talents; Self = class/tank/pet checks; HS = Healthstone uses; ? = unverified."))
     end
 
     panel.refresh = function()
+        ResetTrashInputs()
+        trashMessage:SetText(L("Defaults: 15s / 7s / 30s. Changes apply to new sessions only."))
+        trashMessage:SetTextColor(0.9, 0.9, 0.9)
         manualCB:SetChecked(ARC_DB.manualMode)
         autohideCB:SetChecked(ARC_DB.autoHide)
         lockCB:SetChecked(ARC_DB.locked)
         minimapCB:SetChecked(not ARC_DB.minimap.hide)
         autoSessionCB:SetChecked(ARC_DB.autoSessions)
         scaleSlider:SetValue(ARC_DB.scale or 1.0)
+        local opacityPercent = math.floor((ARC_DB.windowOpacity or 0.7) * 100 + 0.5)
+        opacitySlider:SetValue(opacityPercent)
+        opacityValueText:SetText(opacityPercent .. "%")
         ilvlInput:SetText(tostring(ARC_DB.minItemLevel or 450))
         ilvlInput:ClearFocus()
         ilvlMessage:SetText(L("400-600. Enter or Apply to save; Escape to cancel."))
@@ -328,6 +470,11 @@ function ARC:CreateOptionsPanel()
     end
 
     ARC.optionsPanel = panel
+    panel.skinButtons = { languageButton, ilvlApply, resetBtn, raidBtn, sessionBtn, demoBtn, trashApply }
+    panel.skinCheckBoxes = { manualCB, autohideCB, lockCB, minimapCB, autoSessionCB }
+    panel.skinEditBoxes = { ilvlInput, trashInputs.joinGrace, trashInputs.activeGap, trashInputs.reviveGrace }
+    panel.skinSliders = { scaleSlider, opacitySlider }
+    self:TrySkinOptionsElvUI()
     if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(panel, panel.refresh) end
     panel.refresh()
     return panel
@@ -392,6 +539,9 @@ function ARC:CreateRaidOptions()
     panel.refresh()
     if ARC.RegisterLocaleRefresh then ARC:RegisterLocaleRefresh(panel, panel.refresh) end
     self.raidOptionsPanel = panel
+    panel.skinButtons = { panel.mode, panel.loot }
+    panel.skinCheckBoxes = { enabled }
+    self:TrySkinOptionsElvUI()
     return panel
 end
 
@@ -407,6 +557,7 @@ function ARC:OpenOptions()
     if not self.optionsPanel then
         self.optionsPanel = self:CreateOptionsPanel()
     end
+    self:TrySkinOptionsElvUI()
     if InterfaceOptionsFrame_OpenToCategory then
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel)
         InterfaceOptionsFrame_OpenToCategory(self.optionsPanel) -- Blizzard's classic double-call quirk

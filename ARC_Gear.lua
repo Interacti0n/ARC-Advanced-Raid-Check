@@ -783,7 +783,11 @@ local function CheckGemPolicy(result, detail, link, entry, expected)
                 local problem = StatProblem(rule.stats, expected)
                 if problem then reasons[#reasons + 1] = problem end
                 local metaKind = gemID and META_GEM_POLICY[gemID]
-                if metaKind and (not entry.role or entry.role == "NONE") and
+                if metaKind and not expected and
+                    (metaKind == "INT" or metaKind == "AGI" or metaKind == "STR" or
+                     metaKind == "PHYSICAL" or metaKind == "CASTER") then
+                    ValidationWarning(result, detail, gemName .. ": specialization unavailable")
+                elseif metaKind and (not entry.role or entry.role == "NONE") and
                     (metaKind == "HEALER" or metaKind == "TANK") then
                     ValidationWarning(result, detail, gemName .. ": role unavailable")
                 else

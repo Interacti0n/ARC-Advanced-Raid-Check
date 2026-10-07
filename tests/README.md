@@ -35,7 +35,8 @@ mocked WoW APIs, verifies the player-check entry and checks version agreement.
 It checks:
 
 - consistent Advanced Raid Check branding, unchanged settings/slash/prefix and countdown;
-- English fallback, Slovak/Czech switching, live UI refresh and per-character language storage;
+- English fallback, Slovak/Czech switching, format-argument parity, live UI
+  refresh and per-character language storage;
 - legacy, corrupt and newer saved-variable schemas without setting/history loss;
 - compact inspect-header button anchors, long-title space, reopening and title-widget fallbacks;
 - full Talents label/column width and the simplified talent tooltip;
@@ -75,11 +76,19 @@ It checks:
 - top/weak/PvP enchants, profession options, runeforges, scopes and off-hands;
 - cold gem retries without another inspect or lost ilvl; unknown data cannot pass;
 - hunter ranged weapon ilvl weighting.
-- raid-session attendance, AFK intervals, 10-second trash inactivity with
-  retroactive threshold credit/reset, boss resets/wipes/kills, first deaths and
-  copyable reports.
+- raid-session attendance, legacy ten-second intervals and configurable 15/7/30
+  trash timing with retroactive threshold credit, excluded dead/offline/revival
+  time, reconnect/rejoin, no double counting and no pet-owner credit;
+- ghost runback continuity, live encounter reload, stale/missed ends, mismatched
+  encounter IDs, pull-cap isolation, resets/wipes/kills and copyable reports;
+- unknown-spec meta safety, wrong main-stat flasks, independent banner colors,
+  wrapped banner spacing and data freshness hints;
+- opacity, isolated 10-player preview, paused preview inspection, grouped
+  scrolling ElvUI options, atomic timer validation and schema-two defaults.
 - player-grouped session loot, boss attribution, epic-only trash, exact item
   tooltips, bonus-roll sync/deduplication and empty-roll limitations.
+- bounded fair metadata retries, exact-link cache invalidation and delayed
+  variant tooltips without rescanning resolved loot every second.
 - stale TOC omitting the new module: one startup warning, safe world/inspect
   events and update ticks, actionable `/arc check` feedback, working raid UI,
   minimap and ready-check response buttons.

@@ -9,6 +9,9 @@ replace a live 5.4.8 client, a private server's APIs or visual inspection.
 2. Confirm there is no Lua error and ARC reports the expected version.
 3. Open `/arc options`, change scale and toggle the minimap button.
 4. Verify the window with ElvUI both enabled and disabled when possible.
+5. Switch English/Slovak/Czech, scroll every settings group and test opacity,
+   random demo/exit and all three numeric trash limits. Verify a real ready
+   check removes the preview and no demo player enters a session/export.
 
 ## Raid window and ready check
 
@@ -49,6 +52,9 @@ replace a live 5.4.8 client, a private server's APIs or visual inspection.
 8. With two ARC clients, confirm professions arrive after a report and that
    Blacksmithing sockets, Jewelcrafting gems and Enchanting rings update safely.
 9. Unknown or uncached IDs must remain **Unverified**, never green OK.
+10. An unavailable spec must not falsely reject a valid stat-specific meta;
+    a known PvP meta must still fail. Try a wrong main-stat flask with known spec
+    and check its icon, Flask total and reminder; unknown spec stays neutral.
 
 ## Readiness and session checks
 
@@ -57,8 +63,10 @@ for talents, tank stances/Righteous Fury, pets, Growl, Sacrifice, Shaman imbues,
 Healthstones and mixed-version peers.
 
 For session reporting, follow the [session live checklist](SESSION_REPORT.md)
-and specifically confirm that trash inactivity begins after ten seconds,
-includes the initial ten seconds once crossed, and resets on recorded activity.
+and specifically confirm a new session's 15-second join/seven-second activity
+thresholds, retroactive threshold credit, excluded 30-second revival grace,
+dead/offline exclusions, ghost runback continuity and reload during a boss.
+Old saved sessions keep their original limits. Settings affect only new sessions.
 
 ## Developer checks
 

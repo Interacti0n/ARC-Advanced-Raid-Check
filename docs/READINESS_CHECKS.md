@@ -169,6 +169,9 @@ Timed flask and food auras warn at five minutes remaining. They keep their real
 icons but turn amber; missing remains red and unavailable remains unknown. The
 summary's `Soon` count is per expiring consumable, not per player. Announcements
 and private reminders distinguish missing from expiring effects.
+Known STR/AGI/INT flasks also fail on a mismatched known spec main stat. Spirit,
+stamina, Crystal of Insanity and unidentified/custom stat choices remain neutral.
+The summary's Flask count includes both missing and confirmed wrong-stat flasks.
 
 Remind includes only confirmed personal findings: flask/food, completed gear
 audit issues, empty talents, class/tank/pet readiness and Healthstone. It omits
@@ -222,7 +225,8 @@ unverified, older clients are marked `Old`, and newer peers are not accused.
     verify HS 3/2/1/!0 on another ARC, including while the sender window is hidden.
     Test no stone, old/no ARC, expired reports, no-warlock groups and solo city
     checks. Do not treat cooldown as missing. Confirm HS and Self errors appear
-    in the summary and as direct lines in the standalone report.
+    in the raid summary; standalone ARC Check remains gear/talent focused and
+    does not include the raid readiness/Healthstone section.
 
 Automated tests validate Lua control flow and mocked widget state, not the live
 client's network/cache behavior or exact rendered layout.

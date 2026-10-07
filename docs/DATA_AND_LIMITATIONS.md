@@ -107,8 +107,14 @@ Remote durability is exact only when self-reported by that player's ARC. ARC
 does not estimate it from deaths or repair costs.
 
 Session trash inactivity is intentionally approximate. It measures the absence
-of recorded combat participation after the ten-second threshold; it
+of recorded combat participation using each session's captured tolerances
+(new defaults: 15 seconds to join, seven between actions, 30 after revival); it
 is not proof of real-world AFK behavior. See [Session reports](SESSION_REPORT.md).
+Dead/offline intervals and revival grace are excluded. Personal periodic effects
+and auto-attacks remain activity, but pet events never credit their owner.
+No combat flag alone opens or extends a pack. A client outside combat-log range
+cannot observe distant activity and may under-record that period; real hostile
+events continuing after a nominal kill can still keep a trash window open.
 # Remote report freshness
 
 After 120 seconds without a readiness report, ARC clears remote reported item

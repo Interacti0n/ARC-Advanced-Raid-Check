@@ -48,6 +48,10 @@ Each migration advances the schema only after success and must be idempotent so
 an interrupted step can safely run again. Unknown fields and session history
 are preserved. If an older addon sees a newer schema, it keeps that version and
 skips migration instead of downgrading or replacing the database.
+Schema 1 tags the legacy shape; schema 2 introduces `trashSettings` defaults
+without rewriting session history. Each new session snapshots those limits.
+Defensive presentation defaults reject invalid anchors and non-finite values
+instead of passing them to frame APIs.
 
 The language override is intentionally separate in the per-character
 `ARC_CharDB.language` field. `auto` follows the game client when ARC has a
@@ -88,6 +92,17 @@ WoWSims-derived catalog notice is embedded in `ARC_Gear.lua`, so the required
 notice remains in the minimal package.
 
 See [Release checklist](RELEASE_CHECKLIST.md) for packaging and publishing.
+
+## Session performance and preview isolation
+
+Session combat identity is GUID-first; an unknown GUID is never reassigned by
+name to a player. Pet evidence keeps trash detection alive but cannot credit its
+owner. A restored encounter has a guarded missed-end fallback. The pull-history
+cap still keeps an unrecorded runtime encounter so bosses cannot become trash.
+Loot tooltip metadata is cached per exact item link; unresolved entries use a
+rotating read budget and delayed retries. Preview uses a separate temporary
+roster and pauses raid inspect work, without replacing saved or communicated
+live state. It does not stop real session tracking or owner heartbeats.
 # Connection-health reporting (1.9.0)
 
 Core samples FPS at most once per second and publishes its interval average plus

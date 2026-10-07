@@ -95,6 +95,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
             -- Covers the case where ARC's frame already exists and ElvUI
             -- only finishes loading afterward.
             ARC:TrySkinElvUI()
+            if ARC.TrySkinOptionsElvUI then ARC:TrySkinOptionsElvUI() end
             if ARC.TrySkinSessionUI then ARC:TrySkinSessionUI() end
             if ARC.TrySkinPlayerCheckUI then ARC:TrySkinPlayerCheckUI() end
         end
@@ -104,6 +105,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         -- Second chance at ElvUI skinning: some ElvUI forks finish their
         -- own module setup slightly after ADDON_LOADED fires for them.
         ARC:TrySkinElvUI()
+        if ARC.TrySkinOptionsElvUI then ARC:TrySkinOptionsElvUI() end
         if HasPlayerCheck(true) then
             ARC:AttachInspectCheckButton()
             if ARC.AttachCharacterCheckButton then ARC:AttachCharacterCheckButton() end
@@ -111,6 +113,7 @@ eventFrame:SetScript("OnEvent", function(self, event, ...)
         if ARC.InitPlayerCheckMenu then ARC:InitPlayerCheckMenu() end
 
     elseif event == "READY_CHECK" then
+        if ARC.ClearDemoRoster then ARC:ClearDemoRoster() end
         local initiator, duration = ...
         ARC.readyCheckActive    = true
         ARC.readyCheckResponded = false
@@ -255,7 +258,7 @@ eventFrame:SetScript("OnUpdate", function(self, elapsed)
             ARC:RefreshRosterStatus()
         end
         ARC:Render() -- also refreshes the title's countdown text every second
-        ARC.QueueInspectCandidates()
+        if not ARC.demoRoster then ARC.QueueInspectCandidates() end
     end
 
     ARC.TryNextInspect()

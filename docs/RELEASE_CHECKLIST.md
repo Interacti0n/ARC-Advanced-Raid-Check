@@ -68,7 +68,20 @@ and [GitHub CLI upload documentation](https://cli.github.com/manual/gh_release_u
 A local `candidate` ZIP is not a published release or proof of in-game testing.
 Do not label the version verified on the server until the live checklist passes.
 
-## Current 1.9.1 local preflight — 2026-09-15
+## Current 1.10.0 local preflight — 2026-10-08
+
+- 162 mocked ARC regression tests passed, including join/activity/revival
+  timing, reconnect/rejoin, same-named pets, runback/reload recovery, banner
+  layout/colors, safe meta/flask checks, loot caching and localized options.
+- Stale-TOC regression checks and all nine release-tooling tests passed.
+- All twelve Lua files parsed locally with Fengari (Lua 5.3 semantics); native
+  Lua 5.1 syntax/runtime verification remains required before publication.
+- A local candidate ZIP was built and its minimal manifest verified: TOC,
+  Lua modules, changelog and license only, without docs/tests/tooling.
+- Core, TOC, README and changelog agree on 1.10.0. No release is published by
+  this preflight. Real 5.4.8 raid/multi-client and ElvUI visual checks remain.
+
+## Previous 1.9.1 local preflight — 2026-09-15
 
 - 140 mocked regression tests passed, including fractional trash intervals,
   repeated accumulation, pack closure, short packs and stuck-combat cleanup.

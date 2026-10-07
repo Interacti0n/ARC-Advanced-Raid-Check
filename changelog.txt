@@ -1,3 +1,19 @@
+v1.10.0 CHANGES
+  - Added English, Slovak and Czech interface selection, remembered per character.
+  - Added background opacity, a temporary random 10-player demo and grouped,
+    scrolling ElvUI-compatible settings; demo data never enters live reports.
+  - Added adjustable trash tolerances: 15 seconds to join, seven seconds between
+    personal activity and 30 seconds after revival. New sessions capture their
+    settings; existing reports keep their original policy and totals.
+  - Protected sessions during ghost runbacks and restored live boss attempts
+    after reload; missing encounter ends stay Interrupted, never invented kills.
+  - Labelled short failed boss attempts as Reset, preserved dead/offline trash
+    exclusions and prevented same-named pets from crediting player activity.
+  - Fixed raid-setup banner colors and wrapped layout, unknown-spec meta checks
+    and unsafe saved settings; added data ages and wrong main-stat flask checks.
+  - Cached resolved loot metadata with bounded, fair retries instead of repeatedly
+    scanning every tooltip; kept installable packages free of docs and tests.
+
 v1.9.1 CHANGES
   - Restored a ten-second trash inactivity threshold, including the initial ten
     seconds once reached; personal periodic effects and auto-attacks still count.

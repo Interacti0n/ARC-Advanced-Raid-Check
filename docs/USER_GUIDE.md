@@ -35,6 +35,7 @@ prefix intentionally remain stable.
 
 ARC has no required library dependencies. When ElvUI is loaded, ARC adopts its
 frame template, media colors, fonts, buttons, row highlights and icon borders.
+The main and raid-setup Options controls also use the available ElvUI handlers.
 
 ## Main window
 
@@ -52,12 +53,25 @@ The roster shows ready state, role, specialization, consumables, raid buffs,
 gear, talents, class readiness, Healthstones and ARC client state. Hover a row
 for details. Right-click a row for **Whisper**, **Inspect**, **ARC Check** and
 **Remind**. Reminder messages include only confirmed personal issues and omit
-unavailable data.
+unavailable data. The row tooltip also shows aura, gear and ARC-report ages;
+unavailable timestamps are omitted rather than implying fresh data.
 
 The 25-player roster scrolls and caps its height to the current screen and ARC
 scale. The footer shows inspect progress as scanned/total plus waiting or
 unavailable players. Hover the Stam, Stat, Crit or Mast header to see the
 detected source of that raid buff.
+
+Options includes a **Window Opacity** slider from 20% to 100%. It changes only
+the main-window background, leaving text, icons and controls fully visible, and
+the selected value is saved across reloads.
+
+**Load Random 10-player Demo** opens a temporary 2-tank, 2-healer and 6-DPS
+roster with randomized readiness, consumables, item levels, gear findings and
+connection health. Demo data is clearly labelled, cannot be announced, never
+changes live roster/session data and is removed by reload or a real ready check.
+Opening the demo does not request inspect data or broadcast fake players. Normal
+own-character heartbeats and real session tracking remain independent of it.
+Reopen Options and use **Exit Demo Roster** to return immediately.
 
 ### Row colors and name labels
 
@@ -69,7 +83,10 @@ detected source of that raid buff.
 | Soft grey | Aura or required inspect data is out of range |
 | Soft yellow | Waiting for the first inspect result |
 
-Flask and food icons turn amber when fewer than five minutes remain. The ARC
+Flask and food icons turn amber when fewer than five minutes remain. A recognized
+STR/AGI/INT flask with the wrong known spec main stat is red, counted in Flask
+findings and included in reminders. Spirit, stamina, Crystal of Insanity and
+unknown/custom stat choices are not guessed to be wrong. The ARC
 column marks an older detected client as **Old** rather than current.
 
 ## Opening mode and ready-check response
@@ -113,6 +130,19 @@ cancels an edit. Invalid or empty input leaves the previous value unchanged.
 Changing the threshold invalidates raid gear results and rescans your own gear.
 An already open standalone report keeps the threshold used for its snapshot
 until **Refresh** is clicked.
+
+## Settings layout
+
+Options scrolls through **General**, **Appearance**, **Raid checks** and
+**Session tracking**. Language is per character; the other controls remain
+account-wide. ElvUI styling includes buttons, inputs, sliders and the scrollbar.
+
+Trash inactivity has three numeric settings: **Join grace** (default 15),
+**Activity gap** (7) and **Revival grace** (30 seconds). Enter whole seconds and
+click the nearby **Apply** or press Enter. Join/activity allow 1–60; revival
+allows 0–120. Invalid input leaves all three previous values unchanged; Escape
+restores saved values. Limits apply to the next new session, not the active or
+historical report. See [Session reports](SESSION_REPORT.md#trash-inactivity).
 
 ## Standalone ARC Check
 
@@ -165,7 +195,10 @@ instead of repeatedly throwing errors.
 
 Use **Session Report** in the main window or Options. By default ARC starts a
 session when you enter a raid instance and saves it after you remain outside for
-30 seconds. Wipes, release and `/reload` do not split the session. Automatic
+30 seconds on a normal departure. A grouped ghost outside keeps the session;
+after revival outside, a two-minute return grace applies. Leaving the group
+uses the normal exit grace. `/reload` resumes the session and safely restores
+or interrupts open boss attempts rather than creating false results. Automatic
 tracking can be disabled in Options and manual start/end commands remain.
 
 The summary shows **Session X / Y** while Previous/Next browses retained

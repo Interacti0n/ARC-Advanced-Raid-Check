@@ -16,6 +16,7 @@ local function object(kind, name, parent)
     return obj
 end
 function methods:GetName() return self.widgetName end
+function methods:SetParent(parent) self.parent = parent end
 function methods:CreateTexture(name) return object("Texture", name, self) end
 function methods:CreateFontString(name) return object("FontString", name, self) end
 function methods:SetText(text) self.text = tostring(text or "") end
@@ -53,6 +54,7 @@ function methods:SetScrollChild(child) self.scrollChild = child end
 for _, name in ipairs({ "SetPoint", "ClearAllPoints", "SetFrameStrata", "SetFrameLevel", "SetClampedToScreen", "SetMovable", "EnableMouse", "RegisterForDrag", "RegisterForClicks", "StartMoving", "StopMovingOrSizing", "SetBackdrop", "SetBackdropColor", "SetBackdropBorderColor", "SetJustifyH", "SetTextColor", "SetVertexColor", "SetAlpha", "SetTexCoord", "SetDesaturated", "SetOwner", "ClearLines", "SetInventoryItem", "SetAllPoints", "SetHighlightTexture", "RegisterEvent", "SetMinMaxValues", "SetValueStep", "SetScale", "AddLine", "SetUnitBuff" }) do
     methods[name] = function() end
 end
+function methods:SetBackdropColor(r, g, b, a) self.backdropColor = { r, g, b, a } end
 function methods:SetAlpha(value) self.alpha = value end
 function methods:SetDrawLayer(layer, sublevel) self.drawLayer, self.drawSublevel = layer, sublevel end
 for _, name in ipairs({ "SetMultiLine", "SetFontObject", "SetFocus", "HighlightText", "SetCursorPosition" }) do methods[name] = function() end end
@@ -335,9 +337,11 @@ test("localization follows the client by default and persists a per-character ov
     assert(ARC:Text("Language") == "Language")
     assert(ARC:SetLanguage("skSK") and ARC_CharDB.language == "skSK")
     assert(ARC:Text("Language") == "Jazyk" and ARCOptionsLanguage:GetText() == "Slovenčina")
+    assert(ARC:Text("Window Opacity") == "Priehľadnosť okna")
     assert(InspectFrame.arcCheckButton:GetText() == "ARC kontrola")
     assert(ARC:LocalizeDiagnostic("Head: Missing enchant") == "Hlava: Chýbajúci enchant")
     assert(ARC:SetLanguage("csCZ") and ARC:Text("Players") == "Hráči")
+    assert(ARC:Text("Load Random 10-player Demo") == "Načíst náhodné 10-player demo")
     assert(ARC:SetLanguage("enUS") and select(2, ARC:GetLanguage()) == "enGB")
     assert(not ARC:SetLanguage("invalid") and ARC_CharDB.language == "enUS")
     assert(ARC:SetLanguage("auto") and ARC_CharDB.language == "auto")
@@ -539,6 +543,9 @@ test("standalone and ElvUI widget branches both load", function()
     methods.CreateBackdrop = function(self) self.backdrop = CreateFrame("Frame", nil, self.parent) end
     local S = {
         HandleButton = function(_, b) b.skinned = true end,
+        HandleCheckBox = function(_, b) b.skinned = true end,
+        HandleEditBox = function(_, b) b.skinned = true end,
+        HandleSliderFrame = function(_, b) b.skinned = true end,
         HandleCloseButton = function() end,
         HandleScrollBar = function(_, b) b.skinned = true end,
     }
@@ -553,6 +560,35 @@ test("standalone and ElvUI widget branches both load", function()
     assert(ARC.frame.readyYes.skinned and ARC.frame.readyNo.skinned)
     assert(ARC.frame.sessionButton.skinned)
     assert(ARCMainRosterScrollFrameScrollBar.skinned)
+    assert(ARCOptionsLanguage.skinned and ARCOptionsMinIlvlApply.skinned and ARCOptionsDemoRoster.skinned)
+    assert(ARCOptionsManual.skinned and ARCOptionsMinIlvl.skinned and ARCOptionsOpacity.skinned)
+end)
+test("window opacity saves immediately and remains applied through ElvUI", function()
+    ARCOptionsOpacity.scripts.OnValueChanged(ARCOptionsOpacity, 55)
+    assert(ARC_DB.windowOpacity == 0.55)
+    assert(ARC.frame.backdropColor and ARC.frame.backdropColor[4] == 0.55)
+    ARC:TrySkinElvUI()
+    assert(ARC.frame.backdropColor[4] == 0.55)
+end)
+test("random demo roster is isolated from live data and cleared by a real ready check", function()
+    local liveRoster = ARC.roster
+    ARCOptionsDemoRoster.scripts.OnClick(ARCOptionsDemoRoster)
+    local tanks, healers, damage, total = 0, 0, 0, 0
+    for _, key in ipairs(ARC.demoOrder) do
+        local entry = ARC.demoRoster[key]
+        total = total + 1
+        if entry.role == "TANK" then tanks = tanks + 1
+        elseif entry.role == "HEALER" then healers = healers + 1
+        elseif entry.role == "DAMAGER" then damage = damage + 1 end
+    end
+    assert(total == 10 and tanks == 2 and healers == 2 and damage == 6)
+    assert(ARC.roster == liveRoster)
+    for key in pairs(ARC.roster) do assert(not key:find("Demo", 1, true)) end
+    assert(ARC.frame.title:GetText():find("DEMO", 1, true) and ARC.frame.announce.disabled)
+    assert(ARCOptionsDemoRoster:GetText() == "Exit Demo Roster")
+    ARCEventFrame.scripts.OnEvent(ARCEventFrame, "READY_CHECK", "SomeoneElse", 30)
+    assert(not ARC.demoRoster and not ARC.demoOrder)
+    assert(ARCOptionsDemoRoster:GetText() == "Load Random 10-player Demo")
 end)
 local function readyEvent(event, ...)
     ARCEventFrame.scripts.OnEvent(ARCEventFrame, event, ...)
@@ -565,12 +601,12 @@ test("saved-variable schema upgrades legacy data without resets and preserves ne
     local original = ARC_DB
     local sessions = { { marker = "keep" } }
     ARC_DB = {
-        manualMode = true, minItemLevel = 477, sessions = sessions,
+        manualMode = true, minItemLevel = 477, windowOpacity = 0.58, sessions = sessions,
         minimap = { hide = true, angle = 91 }, futureUnknownField = "keep",
     }
     ARC.Internal.ARC_InitDB()
     assert(ARC_DB.schemaVersion == ARC.DB_SCHEMA_VERSION)
-    assert(ARC_DB.manualMode and ARC_DB.minItemLevel == 477)
+    assert(ARC_DB.manualMode and ARC_DB.minItemLevel == 477 and ARC_DB.windowOpacity == 0.58)
     assert(ARC_DB.sessions == sessions and ARC_DB.futureUnknownField == "keep")
     assert(ARC_DB.minimap.hide and ARC_DB.minimap.angle == 91)
 
@@ -582,7 +618,7 @@ test("saved-variable schema upgrades legacy data without resets and preserves ne
 
     ARC_DB = "corrupt"
     ARC.Internal.ARC_InitDB()
-    assert(type(ARC_DB) == "table" and ARC_DB.schemaVersion == ARC.DB_SCHEMA_VERSION)
+    assert(type(ARC_DB) == "table" and ARC_DB.schemaVersion == ARC.DB_SCHEMA_VERSION and ARC_DB.windowOpacity == 0.7)
     ARC_DB = original
 end)
 test("manual mode never opens a hidden window or auto-answers", function()
@@ -2218,7 +2254,7 @@ test("raid sessions track attendance, tables, strict trash inactivity and boss p
         local report = ARC:GetSessionReportText()
         assert(report:find("Siege of Orgrimmar", 1, true) and report:find("Sha of Pride | KILL", 1, true))
         assert(not report:find("AFK flag", 1, true) and report:find("trash idle 33s / 100%", 1, true))
-        assert(report:find("estimated after 10s", 1, true))
+        assert(report:find("15s to join, 7s between personal actions, 30s recovery", 1, true))
         ARC:ShowSessionReport()
         assert(ARC.sessionFrame:IsShown() and ARC.sessionFrame.text:GetText():find("ARC RAID SESSION REPORT", 1, true))
         assert(ARC.sessionFrame.summary:GetText():find("Session 1 / 1", 1, true))
@@ -2597,6 +2633,8 @@ test("trash intervals close on activity and pack end without double counting", f
     withGlobals({ IsInGroup=function() return true end, GetNumGroupMembers=function() return 2 end }, function()
         assert(ARC:StartRaidSession())
         local member = ARC.activeSession.members["Alice-Realm"]
+        -- Also retain coverage of the original ten-second idempotent policy.
+        ARC.activeSession.trashSettings = { joinGrace=10, activeGap=10, reviveGrace=0 }
         local function damage(name)
             ARC:SessionCombatLog(now, "SPELL_DAMAGE", false, name == "Alice" and "A" or "SELF", name, 0, 0, "NPC-TEST", "Trash")
         end
@@ -2628,4 +2666,328 @@ test("trash intervals close on activity and pack end without double counting", f
     end)
     units.party1 = nil
 end)
+test("raid setup retains its independent red and amber banner tones", function()
+    menuStart(); ARC:Show()
+    local verdict, setup = ARC.GetRaidReadinessVerdict, ARC.GetRaidSetupStatus
+    ARC.GetRaidReadinessVerdict = function() return "READY", "good" end
+    ARC.GetRaidSetupStatus = function() return "MISMATCH", "bad" end
+    ARC:Render(); assert(ARC.frame.raidBanner.bg.vertexColor[1] == 0.8)
+    ARC.GetRaidSetupStatus = function() return "UNVERIFIED", "warn" end
+    ARC:Render(); assert(ARC.frame.raidBanner.bg.vertexColor[1] == 0.55)
+    ARC.GetRaidReadinessVerdict, ARC.GetRaidSetupStatus = verdict, setup
+    ARC:Hide()
+end)
+
+test("preview never sends a live report or schedules background inspection", function()
+    local refresh, broadcast, queue = ARC.RefreshRoster, ARC.BroadcastSelf, ARC.QueueInspectCandidates
+    ARC.RefreshRoster = function() error("Demo requested a live refresh") end
+    ARC.BroadcastSelf = function() error("Demo sent a live report") end
+    ARC.QueueInspectCandidates = function() error("Demo enqueued inspections") end
+    ARC:LoadDemoRoster()
+    ARC.inspectQueue = { "target" }
+    local before = notifyCount
+    ARC.TryNextInspect()
+    assert(notifyCount == before)
+    ARC:ClearDemoRoster(); ARC:Hide()
+    ARC.RefreshRoster, ARC.BroadcastSelf, ARC.QueueInspectCandidates = refresh, broadcast, queue
+    wipe(ARC.inspectQueue)
+end)
+
+test("missing specialization leaves valid metas unverified but still rejects PvP metas", function()
+    start()
+    for _, id in ipairs({76885,76884,76886,95347,95346}) do
+        local gear = policyScan({ [1]={gems={id}} }, 0, "MAGE", "DAMAGER")
+        assert(#gear.badGems == 0 and not gear.auditComplete, "Unknown spec cannot condemn meta " .. id)
+    end
+    local gear = policyScan({[1]={gems={95348}}}, 0, "MAGE", "DAMAGER")
+    assert(#gear.badGems == 1 and gear.badGems[1]:find("PvP", 1, true))
+end)
+
+test("main-stat flasks use spell IDs and do not guess unknown or secondary choices", function()
+    menuStart(); ARC:Show()
+    local e = ARC.roster["Me-Realm"]
+    e.specID, e.flaskStat = 253, "INT"
+    assert(ARC:GetConsumableStatus(e, "flask") == "wrong")
+    assert(ARC:GetPlayerReadinessState(e) == "bad")
+    ARC:Render(); assert(ARC.frame.rows[1].flask.vertexColor[2] == 0.25)
+    assert(table.concat(ARC:GetConfirmedIssueTags(e), ","):find("wrong main-stat flask", 1, true))
+    e.specID = nil; assert(ARC:GetConsumableStatus(e, "flask") ~= "wrong")
+    e.specID, e.flaskStat = 253, nil
+    assert(ARC:GetConsumableStatus(e, "flask") ~= "wrong")
+    ARC:RefreshRoster(); ARC:Hide()
+end)
+
+test("ghost runback preserves automatic sessions but a real departure still closes them", function()
+    local inside, dead, grouped = true, false, true
+    withGlobals({IsInInstance=function() return inside, inside and "raid" or "none" end,
+        IsInGroup=function() return grouped end, IsInRaid=function() return false end,
+        UnitIsDeadOrGhost=function() return dead end,
+        GetInstanceInfo=function() return "Test raid", inside and "raid" or "none",3,nil,nil,nil,nil,123 end}, function()
+        ARC_DB.autoSessions, ARC_DB.sessions, ARC_DB.autoSessionSuppressedKey = true, {}, nil
+        ARC.activeSession, ARC_DB.activeSession, ARC.autoOutsideSince = nil, nil, nil
+        ARC:UpdateAutoSession(); local session = assert(ARC.activeSession)
+        dead, inside = true, false
+        ARC:UpdateAutoSession(); now=now+90; ARC:UpdateAutoSession()
+        assert(ARC.activeSession == session)
+        dead=false; ARC:UpdateAutoSession(); now=now+31; ARC:UpdateAutoSession()
+        assert(ARC.activeSession == session, "A recently revived player gets extra return time")
+        inside=true; ARC:UpdateAutoSession(); assert(not session.returningFromWipe)
+        inside, grouped=false,false; ARC:UpdateAutoSession(); now=now+30; ARC:UpdateAutoSession()
+        assert(not ARC.activeSession and #ARC_DB.sessions == 1)
+    end)
+    ARC.autoOutsideSince, ARC_DB.sessions = nil, {}
+end)
+
+test("reload restores live encounters, rejects mismatched ends and interrupts stale pulls", function()
+    local running=true
+    withGlobals({IsInGroup=function() return true end, IsInRaid=function() return false end,
+        IsInInstance=function() return true,"raid" end,
+        IsEncounterInProgress=function() return running end,
+        GetInstanceInfo=function() return "Test raid","raid",3,nil,nil,nil,nil,123 end}, function()
+        ARC:StartRaidSession(); ARC:SessionEncounterStart(715,"Boss",3,10)
+        local session, pull=ARC.activeSession, ARC.currentEncounter
+        session.lastUpdatedAt=time()
+        now=now+20; ARC.currentEncounter=nil; ARC:InitSessionTracker()
+        assert(ARC.currentEncounter == pull)
+        ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"SELF","Me",0,0,"NPC-BOSS","Boss")
+        assert(not ARC.trashCombatStartedAt)
+        ARC:SessionEncounterEnd(999,"Different boss",3,10,1); assert(not pull.endedAt)
+        now=now+10; ARC:SessionEncounterEnd(715,"Boss",3,10,1)
+        assert(pull.success and pull.duration == 30)
+        ARC:SessionEncounterStart(716,"Next boss",3,10)
+        local stale=ARC.currentEncounter
+        session.lastUpdatedAt=time(); now=now+120; running=false
+        ARC.currentEncounter=nil; ARC:InitSessionTracker()
+        assert(not ARC.currentEncounter and stale.interrupted and not stale.success)
+        ARC:EndRaidSession()
+    end)
+    ARC_DB.sessions, ARC.autoOutsideSince = {}, nil
+end)
+
+test("loot metadata is cached with bounded fair retries for cold records", function()
+    local calls=0
+    local line=object("FontString"); line:SetText("Heroic Warforged")
+    withGlobals({GetItemInfo=function(link) calls=calls+1; return "Loot",link,4,566,90,"Armor","Cloth",1,"INVTYPE_HEAD","icon" end,
+        ARCSessionLootScanTooltipTextLeft1=line}, function()
+        local session={loot={}}
+        for i=1,100 do session.loot[i]={itemLink="|cffa335ee|Hitem:1001:0|h[Loot]|h|r"} end
+        for _=1,4 do ARC:ResolveSessionLoot(session) end
+        assert(calls == 100)
+        for _=1,10 do now=now+1; ARC:ResolveSessionLoot(session) end
+        assert(calls == 100, "Resolved metadata must not be scanned every tick")
+    end)
+    calls=0
+    withGlobals({GetItemInfo=function() calls=calls+1; return nil end}, function()
+        local session={loot={}}
+        for i=1,100 do session.loot[i]={itemLink="|cffa335ee|Hitem:1001:0|h[Cold loot]|h|r"} end
+        ARC:ResolveSessionLoot(session); assert(calls == 25)
+        for _=1,3 do ARC:ResolveSessionLoot(session) end
+        for _,entry in ipairs(session.loot) do assert(entry.metadataPending) end
+        assert(calls == 100, "Retry budgeting must not starve older records")
+    end)
+end)
+
+test("trash join, active and revival windows exclude dead time without double counting", function()
+    menuStart(); units.party1=alice; alice.dead=false
+    withGlobals({IsInGroup=function() return true end,GetNumGroupMembers=function() return 2 end}, function()
+        ARC:StartRaidSession()
+        local member=ARC.activeSession.members["Alice-Realm"]
+        local function hit(name)
+            ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,name == "Alice" and "A" or "SELF",name,0,0,"NPC-TOLERANCE","Trash")
+        end
+        local function wait(seconds) now=now+seconds; hit("Me"); ARC:TickTrashInactivity() end
+        local function near(value,expected) assert(math.abs(value-expected)<0.001,tostring(value).." ~= "..expected) end
+        hit("Me"); wait(14.9); near(member.trashInactiveSeconds,0)
+        wait(0.2); near(member.trashInactiveSeconds,15.1)
+        hit("Alice"); wait(6.9); near(member.trashInactiveSeconds,15.1)
+        wait(0.2); near(member.trashInactiveSeconds,22.2)
+        ARC:TickTrashInactivity(); near(member.trashInactiveSeconds,22.2)
+        alice.dead=true
+        ARC:SessionCombatLog(now,"UNIT_DIED",false,nil,nil,0,0,"A","Alice")
+        wait(10); near(member.trashInactiveSeconds,22.2)
+        alice.dead=false; wait(1)
+        wait(29.9); near(member.trashInactiveSeconds,22.2)
+        wait(0.2); near(member.trashInactiveSeconds,22.2)
+        wait(6.9); near(member.trashInactiveSeconds,29.2)
+        ARC:EndTrashCombat(now); near(member.trashInactiveSeconds,29.2)
+        ARC:EndRaidSession()
+    end)
+    units.party1=nil; alice.dead=false; ARC_DB.sessions={}
+end)
+
+test("scrolling localized options validate trash limits atomically and preserve active policy", function()
+    assert(ARC.optionsPanel.scroll and ARCOptionsContent.height >= 800)
+    assert(ARCOptionsManual.parent == ARCOptionsContent and ARCOptionsTrashApply.skinned)
+    local original=ARC_DB.trashSettings
+    ARC_DB.trashSettings={joinGrace=15,activeGap=7,reviveGrace=30}
+    ARC.optionsPanel.refresh()
+    ARCOptionsTrashjoinGrace:SetText("20"); ARCOptionsTrashactiveGap:SetText("0")
+    ARCOptionsTrashApply.scripts.OnClick()
+    assert(ARC_DB.trashSettings.joinGrace == 15 and ARC_DB.trashSettings.activeGap == 7)
+    ARCOptionsTrashactiveGap:SetText("9"); ARCOptionsTrashreviveGrace:SetText("45")
+    ARCOptionsTrashApply.scripts.OnClick()
+    assert(ARC_DB.trashSettings.joinGrace == 20 and ARC_DB.trashSettings.reviveGrace == 45)
+    assert(ARC:SetLanguage("skSK") and ARC:Text("Appearance") == "Vzhľad")
+    ARC:SetLanguage("enGB")
+    ARC_DB.trashSettings=original; ARC.optionsPanel.refresh()
+end)
+
+test("schema two repairs unsafe presentation settings without losing history", function()
+    local saved=ARC_DB
+    local history={{startedAt=123, endedAt=456}}
+    ARC_DB={schemaVersion=1, sessions=history, custom="keep", point={"INVALID","UIParent","CENTER",0,0},
+        scale=0/0, windowOpacity=0/0, minimap={hide="false",angle=math.huge},
+        manualMode="false", trashSettings={joinGrace="22",activeGap=-5,reviveGrace="bad"}}
+    ARC.Internal.ARC_InitDB()
+    assert(ARC_DB.schemaVersion == 2 and ARC_DB.sessions == history and ARC_DB.custom == "keep")
+    assert(ARC_DB.point[1] == "CENTER" and ARC_DB.scale == 1 and ARC_DB.windowOpacity == 0.7)
+    assert(not ARC_DB.manualMode and not ARC_DB.minimap.hide and ARC_DB.minimap.angle == 200)
+    assert(ARC_DB.trashSettings.joinGrace == 22 and ARC_DB.trashSettings.activeGap == 1 and ARC_DB.trashSettings.reviveGrace == 30)
+    ARC_DB=saved
+end)
+
+test("legacy and partial saved session timing remains safe and preserves totals", function()
+    menuStart()
+    local saved=ARC_DB.sessions
+    local old={version=3,startedAt=time()-100,endedAt=time()-10,members={},pulls={},loot={}}
+    local partial={version=3,startedAt=time()-100,endedAt=time()-10,members={},pulls={},loot={},
+        trashSettings={joinGrace=20,activeGap=0/0,reviveGrace="bad"},trashCombatSeconds=42}
+    ARC_DB.sessions={old,partial}; ARC:InitSessionTracker()
+    assert(old.trashSettings.joinGrace == 10 and old.trashSettings.activeGap == 10 and old.trashSettings.reviveGrace == 0)
+    assert(partial.trashSettings.joinGrace == 20 and partial.trashSettings.activeGap == 10 and partial.trashSettings.reviveGrace == 0)
+    assert(partial.trashCombatSeconds == 42)
+    ARC_DB.sessions=saved
+end)
+
+test("same-named pets neither credit player activity nor count as player deaths", function()
+    menuStart(); units.party1=alice
+    units.partypet1={guid="PET-ALICE",name="Alice",online=true,visible=true}
+    withGlobals({IsInGroup=function() return true end,GetNumGroupMembers=function() return 2 end}, function()
+        assert(ARC:StartRaidSession())
+        local member=ARC.activeSession.members["Alice-Realm"]
+        -- A pet-only pull proves combat, but must not prove owner activity.
+        ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"PET-ALICE","Alice",0,0,"NPC-PET-TEST","Trash")
+        assert(ARC.trashCombatStartedAt)
+        now=now+16
+        ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"PET-ALICE","Alice",0,0,"NPC-PET-TEST","Trash")
+        ARC:TickTrashInactivity()
+        assert(member.trashInactiveSeconds == 16 and not ARC.sessionParticipated["Alice-Realm"])
+        ARC:SessionCombatLog(now,"UNIT_DIED",false,nil,nil,0,0,"PET-ALICE","Alice")
+        assert(member.deaths == 0)
+        ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"NPC-SAME-NAME","Alice",0,0,"NPC-PET-TEST","Trash")
+        assert(not ARC.sessionParticipated["Alice-Realm"])
+        ARC:EndRaidSession()
+    end)
+    units.party1,units.partypet1=nil,nil; ARC_DB.sessions={}
+end)
+
+test("rejoining and reconnecting never turn absent time into trash inactivity", function()
+    menuStart(); units.party1=alice; alice.online=true
+    withGlobals({IsInGroup=function() return true end,GetNumGroupMembers=function() return 2 end}, function()
+        assert(ARC:StartRaidSession())
+        local member=ARC.activeSession.members["Alice-Realm"]
+        local function hit() ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"SELF","Me",0,0,"NPC-OFFLINE","Trash") end
+        hit(); now=now+14; hit(); ARC:TickTrashInactivity()
+        alice.online=false; ARC:UpdateSessionRoster()
+        now=now+20; hit(); ARC:TickTrashInactivity()
+        alice.online=true; ARC:UpdateSessionRoster()
+        now=now+14; hit(); ARC:TickTrashInactivity()
+        assert(member.trashInactiveSeconds == 0)
+        now=now+1; hit(); ARC:TickTrashInactivity(); assert(member.trashInactiveSeconds == 15)
+        units.party1=nil; ARC:UpdateSessionRoster()
+        now=now+20; hit(); ARC:TickTrashInactivity()
+        units.party1=alice; ARC:UpdateSessionRoster()
+        now=now+14; hit(); ARC:TickTrashInactivity(); assert(member.trashInactiveSeconds == 15)
+        now=now+1; hit(); ARC:TickTrashInactivity(); assert(member.trashInactiveSeconds == 30)
+        ARC:EndRaidSession()
+    end)
+    units.party1=nil; alice.online=true; ARC_DB.sessions={}
+end)
+
+test("restored encounters recover from a missed end without inventing a kill", function()
+    menuStart()
+    local running=true
+    withGlobals({IsInGroup=function() return true end,IsInInstance=function() return true,"raid" end,
+        IsEncounterInProgress=function() return running end,
+        GetInstanceInfo=function() return "Test raid","raid",3,nil,nil,nil,nil,123 end}, function()
+        ARC:StartRaidSession(); ARC:SessionEncounterStart(715,"Boss",3,10)
+        local pull=ARC.currentEncounter
+        ARC.activeSession.lastUpdatedAt=time(); ARC:InitSessionTracker()
+        running=false; ARC:CheckRestoredEncounter(); now=now+5.9; ARC:CheckRestoredEncounter()
+        assert(ARC.currentEncounter == pull)
+        now=now+0.2; ARC:CheckRestoredEncounter()
+        assert(not ARC.currentEncounter and pull.interrupted and not pull.success and not pull.reset)
+        ARC:StartTrashCombat("NPC-AFTER-RELOAD"); assert(ARC.trashCombatStartedAt)
+        ARC:EndRaidSession()
+    end)
+    ARC_DB.sessions={}
+end)
+
+test("boss history cap cannot make a boss fight become trash", function()
+    menuStart()
+    withGlobals({IsInGroup=function() return true end}, function()
+        ARC:StartRaidSession()
+        for i=1,200 do ARC.activeSession.pulls[i]={encounterID=i,endedAt=time(),startedAt=time(),deaths={}} end
+        ARC:SessionEncounterStart(900,"Extra pull",3,10)
+        assert(#ARC.activeSession.pulls == 200 and ARC.currentEncounter.unrecorded)
+        ARC:SessionCombatLog(now,"SPELL_DAMAGE",false,"SELF","Me",0,0,"NPC-CAP","Boss")
+        assert(not ARC.trashCombatStartedAt)
+        ARC:SessionEncounterEnd(900,"Extra pull",3,10,0)
+        assert(not ARC.currentEncounter and #ARC.activeSession.pulls == 200)
+        ARC:EndRaidSession()
+    end)
+    ARC_DB.sessions={}
+end)
+
+test("loot retries delayed variant data then caches the resolved tooltip", function()
+    local calls=0
+    local line=object("FontString"); line:SetText("")
+    withGlobals({GetItemInfo=function(link) calls=calls+1; return "Loot",link,4,566,90,"Armor","Cloth",1,"INVTYPE_HEAD","icon" end,
+        ARCSessionLootScanTooltipTextLeft1=line}, function()
+        local entry={itemLink="|cffa335ee|Hitem:1001:0|h[Loot]|h|r"}
+        local session={loot={entry}}
+        ARC:ResolveSessionLoot(session); assert(calls == 1 and entry.variantPending)
+        now=now+4.9; ARC:ResolveSessionLoot(session); assert(calls == 1)
+        line:SetText("Heroic Warforged"); now=now+0.2; ARC:ResolveSessionLoot(session)
+        assert(calls == 2 and entry.forgedTag == "Warforged" and not entry.variantPending)
+        now=now+20; ARC:ResolveSessionLoot(session); assert(calls == 2)
+        entry.itemLink="|cffa335ee|Hitem:1002:0|h[Other loot]|h|r"
+        line:SetText("Normal")
+        ARC:ResolveSessionLoot(session)
+        assert(calls == 3 and not entry.forgedTag and not entry.difficultyTag)
+    end)
+end)
+
+test("multiline banner and summary reserve space above roster columns", function()
+    menuStart(); ARC:Show()
+    local verdict,setup=ARC.GetRaidReadinessVerdict,ARC.GetRaidSetupStatus
+    ARC.GetRaidReadinessVerdict=function() return "READY\nSECOND\nTHIRD\nFOURTH", "good" end
+    ARC.GetRaidSetupStatus=function() return "OK\nLINE", "good" end
+    local summaryHeight=ARC.frame.summary.GetStringHeight
+    ARC.frame.summary.GetStringHeight=function() return 39 end
+    ARC:Render()
+    local f=ARC.frame
+    local bannerHeight=f.raidBanner.height
+    assert(bannerHeight > 48)
+    local headerY=-f.header.points[1][3]
+    assert(headerY > 52+bannerHeight+39)
+    ARC.GetRaidReadinessVerdict,ARC.GetRaidSetupStatus=verdict,setup
+    f.summary.GetStringHeight=summaryHeight
+    ARC:Render(); ARC:Hide()
+end)
+
+test("every Slovak and Czech translation preserves format arguments", function()
+    local function formats(text)
+        local tokens={}
+        text=text:gsub("%%%%", "")
+        for token in text:gmatch("%%[-+ #0]*%d*%.?%d*[a-zA-Z]") do tokens[#tokens+1]=token end
+        return table.concat(tokens,"|")
+    end
+    for _,locale in ipairs({"skSK","csCZ"}) do
+        for key,value in pairs(ARC.Locales[locale]) do
+            assert(formats(key) == formats(value), locale .. " changes format arguments: " .. key)
+        end
+    end
+end)
+
 print("Passed " .. passed .. " ARC regression tests")

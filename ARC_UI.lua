@@ -14,6 +14,16 @@ end
 local function D(text)
     return ARC.LocalizeDiagnostic and ARC:LocalizeDiagnostic(text) or L(text)
 end
+
+function ARC:GetDisplayRoster()
+    if self.demoRoster and self.demoOrder then return self.demoRoster, self.demoOrder end
+    return self.roster, self.order
+end
+
+function ARC:GetDisplayEntry(fullName)
+    local roster = self:GetDisplayRoster()
+    return roster and roster[fullName]
+end
 local function LocalizedList(values)
     local localized = {}
     for index, value in ipairs(values or {}) do localized[index] = D(value) end
@@ -88,14 +98,15 @@ local function BuildCategorySourceLines(key)
     local lines = {}
     local seen = {}
     local unknown = {}
-    for _, fullName in ipairs(ARC.order) do
-        local e = ARC.roster[fullName]
+    local roster, order = ARC:GetDisplayRoster()
+    for _, fullName in ipairs(order) do
+        local e = roster[fullName]
         local buffName = e and e.auraDataAvailable and e[nameField]
         local sourceName = e and e.auraDataAvailable and e[sourceField]
         local signature = sourceName and (sourceName .. "\031" .. (buffName or ""))
         if signature and not seen[signature] then
             seen[signature] = true
-            local sourceEntry = ARC.roster[sourceName]
+            local sourceEntry = roster[sourceName]
             local displayName = sourceEntry and sourceEntry.name or sourceName
             local r, g, b = ClassColor(sourceEntry and sourceEntry.class)
             lines[#lines + 1] = {
@@ -252,6 +263,7 @@ local function SetConsumableIcon(tex, entry, key)
     else
         SetPresenceIcon(tex, true, entry[key .. "Icon"])
         if status == "expiring" then tex:SetVertexColor(1, 0.72, 0.12, 1) end
+        if status == "wrong" then tex:SetVertexColor(1, 0.25, 0.25, 1) end
     end
 end
 
@@ -346,6 +358,7 @@ function ARC:GetConfirmedIssueTags(e)
     local flaskStatus, flaskLeft = self:GetConsumableStatus(e, "flask")
     local foodStatus, foodLeft = self:GetConsumableStatus(e, "food")
     if flaskStatus == "missing" then tags[#tags + 1] = "flask"
+    elseif flaskStatus == "wrong" then tags[#tags + 1] = L("wrong main-stat flask")
     elseif flaskStatus == "expiring" then tags[#tags + 1] = "flask <" .. FormatRemaining(flaskLeft) end
     if foodStatus == "missing" then tags[#tags + 1] = "food"
     elseif foodStatus == "expiring" then tags[#tags + 1] = "food <" .. FormatRemaining(foodLeft) end
@@ -506,7 +519,7 @@ local function CreateRow(parent, index)
     healthHover:EnableMouse(true)
     row.healthHover = healthHover
     healthHover:SetScript("OnEnter", function(self)
-        local e = row.fullName and ARC.roster[row.fullName]
+        local e = row.fullName and ARC:GetDisplayEntry(row.fullName)
         if not e then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine("ARC - " .. (e.name or row.fullName), 1, 1, 1)
@@ -534,7 +547,7 @@ local function CreateRow(parent, index)
     row:EnableMouse(true)
     row:SetScript("OnEnter", function(self)
         if not self.fullName then return end
-        local e = ARC.roster[self.fullName]
+        local e = ARC:GetDisplayEntry(self.fullName)
         if not e then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(e.name, 1, 1, 1)
@@ -572,6 +585,10 @@ local function CreateRow(parent, index)
             GameTooltip:AddLine(L("ARC not detected"), 0.55, 0.55, 0.55)
         end
 
+        if e.lastAuraScan then GameTooltip:AddLine(L("Aura scan: %ds ago", math.floor(math.max(0, GetTime() - e.lastAuraScan))), 0.7, 0.8, 0.9) end
+        if e.gear and e.gear.scannedAt then GameTooltip:AddLine(L("Gear scan: %ds ago", math.floor(math.max(0, GetTime() - e.gear.scannedAt))), 0.7, 0.8, 0.9) end
+        if e.lastComm and e.hasARC then GameTooltip:AddLine(L("Last ARC message: %ds ago", math.floor(math.max(0, GetTime() - e.lastComm))), 0.7, 0.8, 0.9) end
+
         if e.flask then
             local flaskName = e.flaskName
             if flaskName then
@@ -579,6 +596,9 @@ local function CreateRow(parent, index)
                 GameTooltip:AddLine(flaskName .. (detail and (" - " .. detail) or ""), 0.6, 0.9, 1)
             end
             local status, remaining = ARC:GetConsumableStatus(e, "flask")
+            if status == "wrong" then
+                GameTooltip:AddLine(L("Wrong main-stat flask: %s; expected %s", e.flaskStat, ARC.SPEC_PRIMARY[e.specID]), 1, 0.25, 0.25)
+            end
             if remaining then
                 GameTooltip:AddLine(L("Flask remaining: %s", FormatRemaining(remaining)), status == "expiring" and 1 or 0.7,
                     status == "expiring" and 0.65 or 0.9, status == "expiring" and 0.15 or 0.7)
@@ -629,15 +649,20 @@ local function CreateRow(parent, index)
             GameTooltip:AddLine(D(detail), 1, tone == "bad" and 0.25 or 0.78, 0.2, true)
         end
         GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(L("Right-click for options"), 0.5, 0.5, 0.5)
+        if e.demo then
+            GameTooltip:AddLine(L("Temporary demo data"), 0.3, 0.8, 1)
+        else
+            GameTooltip:AddLine(L("Right-click for options"), 0.5, 0.5, 0.5)
+        end
         GameTooltip:Show()
     end)
     row:SetScript("OnLeave", function() GameTooltip:Hide() end)
     row:SetScript("OnMouseUp", function(self, button)
         if button ~= "RightButton" then return end
         if not self.fullName then return end
-        local e = ARC.roster[self.fullName]
+        local e = ARC:GetDisplayEntry(self.fullName)
         if not e then return end
+        if e.demo then return end
         GameTooltip:Hide()
         EasyMenu(BuildPlayerMenu(e), ARCRowDropDown, "cursor", 0, 0, "MENU")
     end)
@@ -656,10 +681,36 @@ local BACKDROP_INFO = {
     insets = { left = 11, right = 11, top = 11, bottom = 11 },
 }
 
+function ARC:GetWindowOpacity()
+    local value = tonumber(ARC_DB and ARC_DB.windowOpacity) or 0.7
+    return math.max(0.2, math.min(1, value))
+end
+
+function ARC:ApplyWindowOpacity(value)
+    local alpha = tonumber(value) or self:GetWindowOpacity()
+    alpha = math.max(0.2, math.min(1, alpha))
+    local f = self.frame
+    if not f then return alpha end
+    if f.SetBackdropColor then pcall(f.SetBackdropColor, f, 0, 0, 0, alpha) end
+    if f.backdrop and f.backdrop ~= f and f.backdrop.SetBackdropColor then
+        pcall(f.backdrop.SetBackdropColor, f.backdrop, 0, 0, 0, alpha)
+    end
+    return alpha
+end
+
+function ARC:SetWindowOpacity(value)
+    value = tonumber(value)
+    if not value then return false end
+    value = math.max(0.2, math.min(1, value))
+    ARC_DB.windowOpacity = value
+    self:ApplyWindowOpacity(value)
+    return true
+end
+
 local function ApplyDefaultSkin(f)
     if not f.SetBackdrop then return end
     f:SetBackdrop(BACKDROP_INFO)
-    f:SetBackdropColor(0, 0, 0, 0.7)       -- ~70% opaque black background
+    f:SetBackdropColor(0, 0, 0, ARC:GetWindowOpacity())
     f:SetBackdropBorderColor(1, 1, 1, 1)   -- fully opaque border
 end
 
@@ -724,7 +775,8 @@ end
 -- button/font helper must not undo a successfully applied main-frame template.
 function ARC:TrySkinElvUI()
     local f = ARC.frame
-    if not f or f.elvuiSkinned then return end
+    if not f then return end
+    if f.elvuiSkinned then self:ApplyWindowOpacity(); return end
     if not (IsAddOnLoaded and IsAddOnLoaded("ElvUI")) then return end
     if not ElvUI then return end
 
@@ -796,6 +848,7 @@ function ARC:TrySkinElvUI()
     for _, row in ipairs(f.rows or {}) do
         self:SkinRowElvUI(row, E)
     end
+    self:ApplyWindowOpacity()
 end
 
 function ARC:CanRespondReadyCheck()
@@ -827,6 +880,125 @@ function ARC:RespondReadyCheck(ready)
         ReadyCheckFrame:Hide()
     end
     self:UpdateReadyButtons()
+end
+
+local DEMO_POOLS = {
+    TANK = {
+        {"Ironwall", "WARRIOR", 73, "Protection", "Interface\\Icons\\Ability_Warrior_DefensiveStance"},
+        {"Sunshield", "PALADIN", 66, "Protection", "Interface\\Icons\\Spell_Holy_DevotionAura"},
+        {"Graveguard", "DEATHKNIGHT", 250, "Blood", "Interface\\Icons\\Spell_Deathknight_BloodPresence"},
+        {"Wildguard", "DRUID", 104, "Guardian", "Interface\\Icons\\Ability_Racial_BearForm"},
+    },
+    HEALER = {
+        {"Dawnprayer", "PRIEST", 257, "Holy", "Interface\\Icons\\Spell_Holy_GuardianSpirit"},
+        {"Mistbloom", "MONK", 270, "Mistweaver", "Interface\\Icons\\Spell_Monk_Mistweaver_Spec"},
+        {"Tidecaller", "SHAMAN", 264, "Restoration", "Interface\\Icons\\Spell_Nature_MagicImmunity"},
+        {"Moonmend", "DRUID", 105, "Restoration", "Interface\\Icons\\Spell_Nature_HealingTouch"},
+    },
+    DAMAGER = {
+        {"Emberveil", "MAGE", 63, "Fire", "Interface\\Icons\\Spell_Fire_FireBolt02"},
+        {"Nightstep", "ROGUE", 260, "Combat", "Interface\\Icons\\Ability_BackStab"},
+        {"Soulbinder", "WARLOCK", 267, "Destruction", "Interface\\Icons\\Spell_Shadow_RainOfFire"},
+        {"Arrowfall", "HUNTER", 254, "Marksmanship", "Interface\\Icons\\Ability_Hunter_FocusedAim"},
+        {"Stormfury", "SHAMAN", 263, "Enhancement", "Interface\\Icons\\Spell_Shaman_ImprovedReincarnation"},
+        {"Frostbane", "DEATHKNIGHT", 251, "Frost", "Interface\\Icons\\Spell_Deathknight_FrostPresence"},
+        {"Lightblade", "PALADIN", 70, "Retribution", "Interface\\Icons\\Spell_Holy_AuraOfLight"},
+        {"Starfire", "DRUID", 102, "Balance", "Interface\\Icons\\Spell_Nature_StarFall"},
+        {"Mindflare", "PRIEST", 258, "Shadow", "Interface\\Icons\\Spell_Shadow_ShadowWordPain"},
+        {"Bladestorm", "WARRIOR", 71, "Arms", "Interface\\Icons\\Ability_Warrior_SavageBlow"},
+    },
+}
+
+local function PickDemoPlayers(pool, count)
+    local copy, result = {}, {}
+    for index, player in ipairs(pool) do copy[index] = player end
+    for index = #copy, 2, -1 do
+        local other = math.random(index)
+        copy[index], copy[other] = copy[other], copy[index]
+    end
+    for index = 1, count do result[#result + 1] = copy[index] end
+    return result
+end
+
+local function EmptyDemoGear(ilvl)
+    return {
+        scanned = true, auditComplete = true, validationPending = false, issueCount = 0,
+        averageItemLevel = ilvl, missingGems = 0, missingGemSlots = {}, missingEnchants = {},
+        badGems = {}, badEnchants = {}, professionIssues = {}, unverified = {},
+        wrongPrimary = {}, lowItems = {}, missingItems = {},
+    }
+end
+
+function ARC:CreateDemoRoster()
+    local selected = {}
+    for _, player in ipairs(PickDemoPlayers(DEMO_POOLS.TANK, 2)) do selected[#selected + 1] = {player, "TANK"} end
+    for _, player in ipairs(PickDemoPlayers(DEMO_POOLS.HEALER, 2)) do selected[#selected + 1] = {player, "HEALER"} end
+    for _, player in ipairs(PickDemoPlayers(DEMO_POOLS.DAMAGER, 6)) do selected[#selected + 1] = {player, "DAMAGER"} end
+
+    local roster, order, now = {}, {}, GetTime()
+    for index, choice in ipairs(selected) do
+        local player, role = choice[1], choice[2]
+        local key = player[1] .. "-Demo"
+        local online, dead, afk = index ~= 10, index == 9, index == 8
+        local hasARC = math.random(100) <= 75
+        local ilvl = math.random(535, 580)
+        local gear = EmptyDemoGear(ilvl)
+        if math.random(100) <= 25 then
+            gear.issueCount = 1
+            gear.lowItems[1] = {label = "Demo slot", name = "Training Item", ilvl = math.random(430, 449)}
+        end
+        local talentIssue = math.random(100) <= 15
+        local selfIssue = math.random(100) <= 15
+        local flask, food = math.random(100) > 15, math.random(100) > 18
+        local durability = hasARC and math.random(55, 100) or nil
+        local ready
+        if index ~= 10 then
+            ready = math.random(100) <= 78 and "ready" or (math.random(2) == 1 and "notready" or "waiting")
+        end
+        local e = {
+            demo = true, name = player[1], class = player[2], role = role, level = 90,
+            guid = "ARC-DEMO-" .. index, online = online, dead = dead, afk = afk,
+            auraDataAvailable = online, inspectable = online, ready = ready,
+            specID = player[3], specName = player[4], specIcon = player[5], specSource = hasARC and "comm" or "inspect",
+            flask = flask, flaskName = flask and "Flask of Demo Power" or nil,
+            flaskIcon = "Interface\\Icons\\INV_Alchemy_EndlessFlask_06", flaskExpiresAt = flask and now + math.random(120, 3600) or nil,
+            food = food, foodName = food and "Well Fed" or nil,
+            foodIcon = "Interface\\Icons\\INV_Misc_Food_100_HardCheese", foodExpiresAt = food and now + math.random(120, 3600) or nil,
+            sta = true, staName = "Power Word: Fortitude", staIcon = "Interface\\Icons\\Spell_Holy_WordFortitude",
+            stat = true, statName = "Mark of the Wild", statIcon = "Interface\\Icons\\Spell_Nature_Regeneration",
+            crit = true, critName = "Arcane Brilliance", critIcon = "Interface\\Icons\\Spell_Holy_MagicalSentry",
+            mast = true, mastName = "Blessing of Might", mastIcon = "Interface\\Icons\\Spell_Holy_FistOfJustice",
+            ilvl = ilvl, ilvlApprox = not hasARC, durPct = durability,
+            durWorst = durability and math.random(35, durability) or nil, hasARC = hasARC,
+            arcVersion = hasARC and self.VERSION or nil, lastComm = hasARC and now - math.random(0, 20) or nil,
+            gear = gear,
+            talents = {source = "self", checkedAt = now, required = 6, complete = true,
+                missing = talentIssue and {"Demo tier"} or {}, unknown = {}},
+            selfBuffs = {checked = 1, missing = selfIssue and {"Demo self buff"} or {}, problems = {}, unknown = {}},
+        }
+        if hasARC then
+            e.connectionHealth = {at = now - math.random(0, 20), home = math.random(25, 230),
+                world = math.random(35, 320), fps = math.random(18, 120)}
+        end
+        roster[key], order[#order + 1] = e, key
+    end
+    return roster, order
+end
+
+function ARC:LoadDemoRoster()
+    self.demoRoster, self.demoOrder = self:CreateDemoRoster()
+    self:Show()
+    self:Render()
+    if self.optionsPanel and self.optionsPanel.refresh then self.optionsPanel.refresh() end
+    print("|cff33ff99ARC:|r " .. L("Loaded a temporary random 10-player demo roster."))
+end
+
+function ARC:ClearDemoRoster()
+    if not self.demoRoster then return false end
+    self.demoRoster, self.demoOrder = nil, nil
+    if self.optionsPanel and self.optionsPanel.refresh then self.optionsPanel.refresh() end
+    if self:IsVisible() then self:Render() end
+    return true
 end
 
 local function BuildMainFrame()
@@ -900,6 +1072,7 @@ local function BuildMainFrame()
     summary:SetPoint("TOPLEFT", 12, -110)
     summary:SetPoint("TOPRIGHT", -12, -110)
     summary:SetJustifyH("LEFT")
+    summary:SetWordWrap(true)
     f.summary = summary
 
     local scroll = CreateFrame("ScrollFrame", "ARCMainRosterScrollFrame", f, "UIPanelScrollFrameTemplate")
@@ -995,7 +1168,9 @@ local function UpdateTitleText()
     local f = ARC.frame
     if not f or not f.title then return end
     local text = "ARC - " .. ARC.NAME
-    if ARC.readyCheckActive then
+    if ARC.demoRoster then
+        text = text .. L(" (DEMO)")
+    elseif ARC.readyCheckActive then
         local left = GetReadyCheckSecondsLeft()
         if left == nil then
             text = text .. L(" (in progress)")
@@ -1024,7 +1199,7 @@ function ARC:GetPlayerReadinessState(e)
 
     local flaskStatus = self:GetConsumableStatus(e, "flask")
     local foodStatus = self:GetConsumableStatus(e, "food")
-    if flaskStatus == "missing" or flaskStatus == "expiring" or
+    if flaskStatus == "missing" or flaskStatus == "expiring" or flaskStatus == "wrong" or
         foodStatus == "missing" or foodStatus == "expiring" then return "bad" end
     if e.gear and e.gear.scanned and (e.gear.issueCount or 0) > 0 then return "bad" end
     if select(2, self:GetTalentStatus(e)) == "bad" or
@@ -1041,9 +1216,10 @@ function ARC:GetPlayerReadinessState(e)
 end
 
 function ARC:GetRaidReadinessVerdict()
+    local roster, order = self:GetDisplayRoster()
     local bad, unknown = 0, 0
-    for _, name in ipairs(self.order) do
-        local state = self:GetPlayerReadinessState(self.roster[name])
+    for _, name in ipairs(order) do
+        local state = self:GetPlayerReadinessState(roster[name])
         if state == "bad" then bad = bad + 1
         elseif state == "warn" then unknown = unknown + 1 end
     end
@@ -1054,7 +1230,7 @@ function ARC:GetRaidReadinessVerdict()
     if unknown > 0 then
         return L("CHECK INCOMPLETE - %d players unverified", unknown), "warn", bad, unknown
     end
-    if #self.order == 0 then return L("CHECK INCOMPLETE - roster unavailable"), "warn", 0, 0 end
+    if #order == 0 then return L("CHECK INCOMPLETE - roster unavailable"), "warn", 0, 0 end
     return L("READY TO PULL - all verified checks passed"), "good", 0, 0
 end
 
@@ -1067,8 +1243,17 @@ function ARC:Render()
     if f.sessionButton then
         f.sessionButton:SetText(L(self.IsSessionActive and self:IsSessionActive() and "Session: ACTIVE" or "Session Report"))
     end
+    if f.announce then
+        if self.demoRoster then f.announce:Disable() else f.announce:Enable() end
+    end
+    local roster, order = self:GetDisplayRoster()
     local verdictText, verdictTone = self:GetRaidReadinessVerdict()
-    local setupText, setupTone = self:GetRaidSetupStatus()
+    local setupText, setupTone
+    if self.demoRoster then
+        setupText, setupTone = L("DEMO ROSTER - temporary data, not saved"), "neutral"
+    else
+        setupText, setupTone = self:GetRaidSetupStatus()
+    end
     f.raidBanner.label:SetText(verdictText .. "\n" .. setupText)
     local bannerTone = (verdictTone == "bad" or setupTone == "bad") and "bad" or
         ((verdictTone == "warn" or setupTone == "warn") and "warn" or "good")
@@ -1087,8 +1272,8 @@ function ARC:Render()
     local expiringConsumables, oldArc, inspected, inspectUnavailable = 0, 0, 0, 0
     local talentIssues, selfBuffIssues, stoneIssues = 0, 0, 0
 
-    for i, name in ipairs(self.order) do
-        local e = self.roster[name]
+    for i, name in ipairs(order) do
+        local e = roster[name]
         local row = self:EnsureRow(i)
         row.fullName = name
         row:Show()
@@ -1097,7 +1282,7 @@ function ARC:Render()
         if e.ready == "ready" then ready = ready + 1 end
         local flaskStatus = self:GetConsumableStatus(e, "flask")
         local foodStatus = self:GetConsumableStatus(e, "food")
-        if flaskStatus == "missing" then missingFlask = missingFlask + 1
+        if flaskStatus == "missing" or flaskStatus == "wrong" then missingFlask = missingFlask + 1
         elseif flaskStatus == "expiring" then expiringConsumables = expiringConsumables + 1 end
         if foodStatus == "missing" then missingFood = missingFood + 1
         elseif foodStatus == "expiring" then expiringConsumables = expiringConsumables + 1 end
@@ -1190,7 +1375,7 @@ function ARC:Render()
         ApplyRowVisualState(row, e, i)
     end
 
-    for i = #self.order + 1, #f.rows do
+    for i = #order + 1, #f.rows do
         f.rows[i]:Hide()
     end
 
@@ -1200,20 +1385,37 @@ function ARC:Render()
         stoneIssues, arcUsers, total, oldArc > 0 and ("  |cffff5533Old: " .. oldArc .. "|r") or ""
     ))
 
-    local totalRows = math.max(#self.order, 1)
+    -- Longer translations and multi-line setup failures need real space, not
+    -- a fixed banner that can hide the last line behind the summary/header.
+    local bannerHeight = math.max(48, math.min(120, f.raidBanner.label:GetStringHeight() + 8))
+    local summaryHeight = math.max(14, math.min(64, f.summary:GetStringHeight()))
+    f.raidBanner:SetHeight(bannerHeight)
+    f.summary:ClearAllPoints()
+    f.summary:SetPoint("TOPLEFT", 12, -(52 + bannerHeight + 10))
+    f.summary:SetPoint("TOPRIGHT", -12, -(52 + bannerHeight + 10))
+    local headerY = 52 + bannerHeight + 10 + summaryHeight + 8
+    f.header:ClearAllPoints()
+    f.header:SetPoint("TOPLEFT", 8, -headerY)
+    local topOffset = headerY + HEADER_HEIGHT + 4
+    f.rosterScroll:ClearAllPoints()
+    f.rosterScroll:SetPoint("TOPLEFT", 8, -topOffset)
+    f.rosterScroll:SetPoint("BOTTOMRIGHT", -28, FOOTER_HEIGHT)
+    local totalRows = math.max(#order, 1)
     local scale = (ARC_DB and ARC_DB.scale) or 1
     local screenHeight = GetScreenHeight and GetScreenHeight() or 768
-    local maxVisibleRows = math.floor(((screenHeight / scale) - TOP_OFFSET - FOOTER_HEIGHT - 40) / ROW_HEIGHT)
+    local maxVisibleRows = math.floor(((screenHeight / scale) - topOffset - FOOTER_HEIGHT - 40) / ROW_HEIGHT)
     maxVisibleRows = math.max(6, math.min(25, maxVisibleRows))
     local visibleRows = math.min(totalRows, maxVisibleRows)
-    local newHeight = TOP_OFFSET + FOOTER_HEIGHT + visibleRows * ROW_HEIGHT
+    local newHeight = topOffset + FOOTER_HEIGHT + visibleRows * ROW_HEIGHT
     f:SetHeight(newHeight)
     f.rowsContainer:SetHeight(totalRows * ROW_HEIGHT)
     local waiting = math.max(0, total - inspected - inspectUnavailable)
     local suffix = waiting > 0 and (" (waiting " .. waiting .. ")") or
         (inspectUnavailable > 0 and (" (unavailable " .. inspectUnavailable .. ")") or "")
-    f.hint:SetText(L("Inspect: %d/%d%s  |  /arc help", inspected, total, suffix))
-    if waiting > 0 then f.hint:SetTextColor(1, 0.78, 0.2)
+    f.hint:SetText(self.demoRoster and L("Demo roster - no inspect requests") or
+        L("Inspect: %d/%d%s  |  /arc help", inspected, total, suffix))
+    if self.demoRoster then f.hint:SetTextColor(0.3, 0.8, 1)
+    elseif waiting > 0 then f.hint:SetTextColor(1, 0.78, 0.2)
     elseif inspectUnavailable > 0 then f.hint:SetTextColor(0.65, 0.65, 0.65)
     else f.hint:SetTextColor(0.3, 1, 0.5) end
 end
@@ -1223,6 +1425,10 @@ end
 --=============================================================================
 
 function ARC:AnnounceMissing()
+    if self.demoRoster then
+        print("|cff33ff99ARC:|r " .. L("Demo data cannot be announced to the group."))
+        return
+    end
     local missing = {}
     local unavailable = 0
     for _, name in ipairs(self.order) do
@@ -1234,6 +1440,7 @@ function ARC:AnnounceMissing()
             local flaskStatus, flaskLeft = self:GetConsumableStatus(e, "flask")
             local foodStatus, foodLeft = self:GetConsumableStatus(e, "food")
             if flaskStatus == "missing" then tags[#tags + 1] = "flask"
+            elseif flaskStatus == "wrong" then tags[#tags + 1] = L("wrong main-stat flask")
             elseif flaskStatus == "expiring" then tags[#tags + 1] = "flask<" .. FormatRemaining(flaskLeft) end
             if foodStatus == "missing" then tags[#tags + 1] = "food"
             elseif foodStatus == "expiring" then tags[#tags + 1] = "food<" .. FormatRemaining(foodLeft) end
@@ -1301,6 +1508,10 @@ function ARC:Show()
     f:SetPoint(unpack(ARC_DB.point))
     f:SetScale(ARC_DB.scale or 1.0)
     f:Show()
+    if self.demoRoster then
+        self:Render()
+        return -- Preview must not enqueue inspections or send a live report.
+    end
     self:RefreshRoster()
     self:Render()
     self:BroadcastSelf(true)

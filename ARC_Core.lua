@@ -19,14 +19,13 @@ HOW IT GETS ITS DATA (please read - this explains the limits of the WoW API)
   - Ready status, role, and every buff (flask/food/raid buffs) are read
     directly off each unit with UnitBuff()/GetReadyCheckStatus()/
     UnitGroupRolesAssigned(). This works for EVERY group member, whether or
-    not they run ARC, because aura/role/ready data is always visible to
-    group members.
+    not they run ARC, when the client exposes the unit's current data.
   - Durability of OTHER players is not exposed by the WoW API. Accurate
     durability therefore requires the other player's ARC client to report it.
     Item level and gear details can be estimated through live inspection; ARC
     reads the upgraded level displayed in each inspected item's tooltip. So:
       * If the other player also has ARC installed, their client reports
-        its own (100% accurate) item level and durability over the hidden
+        its own locally available item level and durability over the hidden
         addon-message channel, and you'll see real numbers.
       * If they do NOT have ARC, ARC tries a live /inspect as a fallback
         to estimate item level (shown with a leading "~"); durability for
@@ -79,7 +78,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.9.1"
+ARC.VERSION       = "1.10.0"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.COMM_MAX_BYTES = 255                   -- legacy MoP addon-message payload limit
@@ -89,7 +88,8 @@ ARC.FULL_REFRESH_EVERY = 5.0               -- expensive aura/gear fallback scan
 ARC.CONSUMABLE_WARN_SECONDS = 300          -- warn when flask/food has <= 5 min left
 ARC.BROADCAST_MIN_GAP = 2.0                -- don't self-broadcast more often than this
 ARC.INSPECT_RETRY_GAP = 12.0               -- seconds before retrying a failed inspect
-ARC.DB_SCHEMA_VERSION = 1                  -- independent from the addon release version
+ARC.DB_SCHEMA_VERSION = 2                  -- independent from the addon release version
+ARC.TRASH_DEFAULTS = { joinGrace = 15, activeGap = 7, reviveGrace = 30 }
 
 local function L(key, ...)
     if ARC.Text then return ARC:Text(key, ...) end
@@ -102,11 +102,14 @@ end
 --=============================================================================
 
 -- Migrations are deliberately incremental and must remain safe to run again.
--- Add future changes as DB_MIGRATIONS[2], [3], ... and only modify fields that
+-- Add future changes as DB_MIGRATIONS[3], [4], ... and only modify fields that
 -- belong to that schema step.  Version 1 tags the legacy database; its shape is
 -- already compatible, so no stored settings or session reports need rewriting.
 local DB_MIGRATIONS = {
     [1] = function(_) end,
+    [2] = function(db)
+        if type(db.trashSettings) ~= "table" then db.trashSettings = {} end
+    end,
 }
 
 local function MigrateDB(db)
@@ -150,16 +153,30 @@ local function ARC_InitDB()
     if type(ARC_DB) ~= "table" then ARC_DB = {} end
     local d = ARC_DB
     MigrateDB(d)
-    if d.point == nil then d.point = { "CENTER", "UIParent", "CENTER", 0, 150 } end
-    if d.locked == nil then d.locked = false end
-    if d.autoHide == nil then d.autoHide = true end -- hide automatically on pull (PLAYER_REGEN_DISABLED)
-    if d.manualMode == nil then d.manualMode = false end
-    if d.autoSessions == nil then d.autoSessions = true end
-    if d.scale == nil then d.scale = 1.0 end
+    local anchors = { TOP=true, TOPLEFT=true, TOPRIGHT=true, LEFT=true, CENTER=true, RIGHT=true, BOTTOM=true, BOTTOMLEFT=true, BOTTOMRIGHT=true }
+    local function finite(value) return type(value) == "number" and value == value and math.abs(value) < math.huge end
+    if type(d.point) ~= "table" or not anchors[d.point[1]] or d.point[2] ~= "UIParent" or
+        not anchors[d.point[3]] or not finite(d.point[4]) or not finite(d.point[5]) then
+        d.point = { "CENTER", "UIParent", "CENTER", 0, 150 }
+    end
+    if type(d.locked) ~= "boolean" then d.locked = false end
+    if type(d.autoHide) ~= "boolean" then d.autoHide = true end
+    if type(d.manualMode) ~= "boolean" then d.manualMode = false end
+    if type(d.autoSessions) ~= "boolean" then d.autoSessions = true end
+    local scale = tonumber(d.scale)
+    d.scale = finite(scale) and math.max(0.6, math.min(1.5, scale)) or 1
+    if type(d.trashSettings) ~= "table" then d.trashSettings = {} end
+    for key, default in pairs(ARC.TRASH_DEFAULTS) do
+        local value = tonumber(d.trashSettings[key])
+        local minimum, maximum = key == "reviveGrace" and 0 or 1, key == "reviveGrace" and 120 or 60
+        d.trashSettings[key] = value and value == value and math.max(minimum, math.min(maximum, math.floor(value))) or default
+    end
+    local windowOpacity = tonumber(d.windowOpacity)
+    d.windowOpacity = finite(windowOpacity) and math.max(0.2, math.min(1, windowOpacity)) or 0.7
     if type(d.minItemLevel) ~= "number" or d.minItemLevel < 400 or d.minItemLevel > 600 or d.minItemLevel ~= math.floor(d.minItemLevel) then d.minItemLevel = 450 end
     if type(d.minimap) ~= "table" then d.minimap = {} end
-    if d.minimap.hide == nil then d.minimap.hide = false end
-    if type(d.minimap.angle) ~= "number" then d.minimap.angle = 200 end
+    if type(d.minimap.hide) ~= "boolean" then d.minimap.hide = false end
+    if not finite(d.minimap.angle) then d.minimap.angle = 200 end
     if type(d.raidSetup) ~= "table" then d.raidSetup = {} end
     if type(d.raidSetup.enabled) ~= "boolean" then d.raidSetup.enabled = true end
     if not ({ [0]=true, [3]=true, [4]=true, [5]=true, [6]=true, [7]=true, [14]=true })[d.raidSetup.difficulty] then d.raidSetup.difficulty = 0 end
@@ -211,6 +228,12 @@ local function BuildLocalizedSpellNames(ids, fallbackName)
 end
 
 local FLASK_NAMES = BuildLocalizedSpellNames(FLASK_SPELL_IDS)
+local FLASK_STATS = { [105689] = "AGI", [105691] = "INT", [105696] = "STR" }
+local FLASK_STAT_NAMES = { ["Flask of Spring Blossoms"] = "AGI", ["Flask of the Warm Sun"] = "INT", ["Flask of Winter's Bite"] = "STR" }
+for id, stat in pairs(FLASK_STATS) do
+    local name = GetSpellInfo and GetSpellInfo(id)
+    if name then FLASK_STAT_NAMES[name] = stat end
+end
 local FOOD_BUFF_NAMES = BuildLocalizedSpellNames(FOOD_SPELL_IDS, FOOD_BUFF_NAME)
 
 -- MoP consolidated raid buff categories (5.x). One source of each is enough;
@@ -388,6 +411,7 @@ local function ScanUnitBuffsUnsafe(unit)
         local source = caster and GetUnitIdentity(caster) or nil
         if (not out.flask) and (FLASK_SPELL_IDS[spellID] or FLASK_NAMES[name] or name:find(FLASK_NAME_PATTERN)) then
             out.flask, out.flaskName, out.flaskIcon = true, name, icon
+            out.flaskStat = FLASK_STATS[spellID] or FLASK_STAT_NAMES[name]
             if duration and duration > 0 and expiresAt and expiresAt > 0 then out.flaskExpiresAt = expiresAt end
         elseif (not out.food) and (FOOD_SPELL_IDS[spellID] or FOOD_BUFF_NAMES[name]) then
             out.food, out.foodName, out.foodIcon = true, name, icon
@@ -502,6 +526,7 @@ local function RefreshUnitPublicData(unit)
             e.buffs = buffs
             e.flask, e.flaskName, e.flaskIcon, e.flaskExpiresAt =
                 buffs.flask, buffs.flaskName, buffs.flaskIcon, buffs.flaskExpiresAt
+            e.flaskStat = buffs.flaskStat
             e.food, e.foodName, e.foodIcon, e.foodExpiresAt =
                 buffs.food, buffs.foodName, buffs.foodIcon, buffs.foodExpiresAt
             e.sta, e.stat, e.crit, e.mast = buffs.sta, buffs.stat, buffs.crit, buffs.mast
@@ -624,6 +649,8 @@ end
 function ARC:GetConsumableStatus(entry, key)
     if not entry or entry.online == false or not entry.auraDataAvailable then return "unknown" end
     if not entry[key] then return "missing", 0 end
+    if key == "flask" and entry.flaskStat and self.SPEC_PRIMARY and self.SPEC_PRIMARY[entry.specID] and
+        entry.flaskStat ~= self.SPEC_PRIMARY[entry.specID] then return "wrong", nil, self.SPEC_PRIMARY[entry.specID] end
     local expiresAt = entry[key .. "ExpiresAt"]
     if expiresAt and expiresAt > 0 then
         local remaining = math.max(0, expiresAt - GetTime())

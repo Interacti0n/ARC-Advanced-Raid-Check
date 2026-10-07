@@ -14,7 +14,7 @@ answering ready checks automatically.
 - standalone **ARC Check** for a targeted player, even outside your group
 - automatic raid-session reports with players, bosses, trash inactivity and loot history
 - English, Slovak and Czech interface with a per-character language choice
-- 25-player scrolling roster and automatic optional ElvUI styling
+- adjustable main-window opacity, a temporary 10-player demo roster and automatic optional ElvUI styling
 
 ## Install
 
@@ -44,9 +44,14 @@ ARC follows an English (`enGB`/`enUS`) game client by default. Slovak and
 Czech can be selected in Options; the choice is remembered separately for each
 character.
 
-Raid sessions start automatically inside raid instances and finish after you
-remain outside for 30 seconds. This can be disabled in Options; completed
-sessions are retained for fourteen days.
+Options also provides a **Window Opacity** slider and **Load Random 10-player
+Demo**. The demo is clearly marked, never enters saved raid/session data and is
+discarded on reload or when a real ready check starts.
+
+Raid sessions start automatically inside raid instances, stay together across
+wipes and finish after a normal 30-second departure, with extra protection for
+ghost runbacks. Tracking and trash inactivity tolerances can be configured in
+Options; completed sessions are retained for fourteen days.
 
 ## Documentation
 
@@ -76,7 +81,7 @@ The product name is **Advanced Raid Check**, but technical identifiers remain
 
 ## Version
 
-Current version: **1.9.1**
+Current version: **1.10.0**
 
 ## License
 

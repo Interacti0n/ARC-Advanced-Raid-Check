@@ -9,13 +9,13 @@ local function L(key, ...)
     return key
 end
 
-local INACTIVE_AFTER = 10
 local TRASH_IDLE_END_AFTER = 6
 local TRASH_DEAD_END_AFTER = 1
 local BOSS_RESET_MAX_DURATION = 60
 local BOSS_RESET_MAX_DEATHS = 5
 local SESSION_RETENTION = 14 * 24 * 60 * 60
 local AUTO_EXIT_GRACE = 30
+local AUTO_RETURN_GRACE = 120
 local MAX_READY_CHECKS = 100
 local MAX_PULLS = 200
 local MAX_LOOT_RECORDS = 500
@@ -67,6 +67,53 @@ local function RaidInstanceState()
     return isRaid and true or false, key, name, difficulty, instanceID
 end
 
+local function EncounterRunning()
+    if type(IsEncounterInProgress) ~= "function" then return nil end
+    local ok, running = pcall(IsEncounterInProgress)
+    if ok and (running == true or running == false or running == 1 or running == 0) then
+        return running == true or running == 1
+    end
+end
+
+local function MemberPetUnit(unit)
+    if unit == "player" then return "pet" end
+    local index = unit:match("^party(%d+)$")
+    if index then return "partypet" .. index end
+    index = unit:match("^raid(%d+)$")
+    if index then return "raidpet" .. index end
+end
+
+function ARC:GetTrashSettings(session)
+    return (session or self.activeSession or {}).trashSettings or ARC_DB.trashSettings or self.TRASH_DEFAULTS
+end
+
+local function ObserveMember(unit, fullName, now)
+    ARC.sessionMemberState = ARC.sessionMemberState or {}
+    local states = ARC.sessionMemberState
+    local state = states[fullName]
+    local dead = UnitIsDeadOrGhost and UnitIsDeadOrGhost(unit) or false
+    local online = not UnitIsConnected or UnitIsConnected(unit)
+    if not state then state = { eligibleSince = now }; states[fullName] = state end
+    if state.dead and not dead and online then
+        ARC.sessionRevivedAt = ARC.sessionRevivedAt or {}
+        ARC.sessionRevivedAt[fullName] = now
+        if ARC.trashCombatStartedAt then
+            ARC.sessionReviveUntil[fullName] = now + ARC:GetTrashSettings().reviveGrace
+            ARC.sessionActivity[fullName] = now
+            ARC.sessionParticipated[fullName] = true
+            ARC.sessionInactiveCredited[fullName] = nil
+        end
+    end
+    if (state.dead or state.online == false) and not dead and online then state.eligibleSince = now end
+    if state.online == false and online and not state.dead and ARC.trashCombatStartedAt then
+        ARC.sessionActivity[fullName] = now
+        ARC.sessionInactiveCredited[fullName] = nil
+        ARC.sessionParticipated[fullName] = false
+    end
+    state.dead, state.online = dead, online
+    return state
+end
+
 local function UpgradeSession(session)
     if type(session) ~= "table" then return end
     local version = tonumber(session.version) or 1
@@ -101,6 +148,16 @@ local function UpgradeSession(session)
     end
     if type(session.loot) ~= "table" then session.loot = {} end
     if type(session.lootSerial) ~= "number" then session.lootSerial = #session.loot end
+    -- Existing reports were recorded under the legacy ten-second policy.
+    if type(session.trashSettings) ~= "table" then
+        session.trashSettings = { joinGrace = 10, activeGap = 10, reviveGrace = 0 }
+    end
+    for key, default in pairs({ joinGrace = 10, activeGap = 10, reviveGrace = 0 }) do
+        local value = tonumber(session.trashSettings[key])
+        local minimum, maximum = key == "reviveGrace" and 0 or 1, key == "reviveGrace" and 120 or 60
+        session.trashSettings[key] = value and value == value and
+            math.max(minimum, math.min(maximum, math.floor(value))) or default
+    end
     session.version = math.max(version, SESSION_VERSION)
 end
 
@@ -142,13 +199,30 @@ function ARC:InitSessionTracker()
     if type(ARC_DB.activeSession) == "table" and not ARC_DB.activeSession.endedAt then
         UpgradeSession(ARC_DB.activeSession)
         self.activeSession = ARC_DB.activeSession
-        for index = #(self.activeSession.pulls or {}), 1, -1 do
-            local pull = self.activeSession.pulls[index]
-            if pull.success then
-                self.lastLootBoss = { encounterID=pull.encounterID, name=pull.name,
-                    difficulty=pull.difficulty, pullIndex=index, at=pull.endedAt, afterTrash=true }
-                break
+        self.currentEncounter, self.lastLootBoss = nil, nil
+        self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil
+        local inRaid = RaidInstanceState()
+        local running = EncounterRunning()
+        local resumedAt = WallTime()
+        for index, pull in ipairs(self.activeSession.pulls or {}) do
+            if not pull.endedAt then
+                local recent = resumedAt - (self.activeSession.lastUpdatedAt or pull.startedAt or 0) <= 30
+                if index == #self.activeSession.pulls and inRaid and (running == true or (running == nil and recent)) then
+                    self.currentEncounter = pull
+                    self.restoredEncounter = pull
+                    pull.startedUptime = GetTime() - math.max(0, resumedAt - (pull.startedAt or resumedAt))
+                else
+                    pull.endedAt = math.max(pull.startedAt or resumedAt, self.activeSession.lastUpdatedAt or resumedAt)
+                    pull.duration = math.max(0, pull.endedAt - (pull.startedAt or pull.endedAt))
+                    pull.interrupted, pull.success = true, false
+                end
             end
+        end
+        local lastIndex = #(self.activeSession.pulls or {})
+        local latest = self.activeSession.pulls and self.activeSession.pulls[lastIndex]
+        if latest and latest.success and not self.currentEncounter then
+            self.lastLootBoss = { encounterID=latest.encounterID, name=latest.name,
+                difficulty=latest.difficulty, pullIndex=lastIndex, at=latest.endedAt, afterTrash=true }
         end
         if ARC_DB.autoSessions then
             local inRaid, key, _, _, instanceID = RaidInstanceState()
@@ -158,7 +232,19 @@ function ARC:InitSessionTracker()
                 self.activeSession.instanceID = self.activeSession.instanceID or instanceID
             end
         end
-        self.sessionActivity = {}
+        self.sessionActivity, self.sessionMemberState, self.sessionRevivedAt = {}, {}, {}
+        -- Do not add an unobserved logout interval to player attendance.
+        for _, member in pairs(self.activeSession.members or {}) do
+            local lastSeen = member.lastSeen or resumedAt
+            if member.presentSince then
+                member.totalPresent = (member.totalPresent or 0) + math.max(0, lastSeen - member.presentSince)
+                member.presentSince = nil
+            end
+            if member.offlineSince then
+                member.offlineSeconds = (member.offlineSeconds or 0) + math.max(0, lastSeen - member.offlineSince)
+                member.offlineSince = nil
+            end
+        end
         self:UpdateSessionRoster()
         print("|cff33ff99ARC:|r " .. L("Resumed the active raid session after reload."))
     end
@@ -172,13 +258,18 @@ function ARC:UpdateSessionRoster()
     local session = self.activeSession
     if not session then return end
     if session.automatic and self.autoOutsideSince then return end
-    local now, present = WallTime(), {}
+    local now, present, petOwners = WallTime(), {}, {}
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) then
             local fullName = I.GetUnitIdentity(unit)
             if fullName then
                 present[fullName] = true
                 local member = EnsureMember(session, fullName, unit)
+                member.guid = UnitGUID(unit)
+                local petUnit = MemberPetUnit(unit)
+                local petGUID = petUnit and UnitExists(petUnit) and UnitGUID(petUnit)
+                if petGUID then petOwners[petGUID] = fullName end
+                ObserveMember(unit, fullName, GetTime())
                 member.lastSeen = now
                 if not member.presentSince then member.presentSince = now end
                 local online = (not UnitIsConnected) or UnitIsConnected(unit)
@@ -193,10 +284,17 @@ function ARC:UpdateSessionRoster()
             end
         end
     end
+    self.trashPetOwners = petOwners
     for fullName, member in pairs(session.members) do
         if member.presentSince and not present[fullName] then
             member.totalPresent = member.totalPresent + math.max(0, now - member.presentSince)
             member.presentSince = nil
+            if self.sessionActivity then self.sessionActivity[fullName] = nil end
+            if self.sessionInactiveCredited then self.sessionInactiveCredited[fullName] = nil end
+            if self.sessionParticipated then self.sessionParticipated[fullName] = nil end
+            if self.sessionMemberState then self.sessionMemberState[fullName] = nil end
+            if self.sessionReviveUntil then self.sessionReviveUntil[fullName] = nil end
+            if self.sessionRevivedAt then self.sessionRevivedAt[fullName] = nil end
         end
         if member.offlineSince and not present[fullName] then
             member.offlineSeconds = (member.offlineSeconds or 0) + math.max(0, now - member.offlineSince)
@@ -222,8 +320,12 @@ function ARC:StartRaidSession(automatic)
         instanceKey = instanceID and tostring(instanceID) or (instance .. ":" .. tostring(difficulty)),
         members = {}, pulls = {}, readyCheckCount = 0,
         trashCombats = 0, trashCombatSeconds = 0, loot = {}, lootSerial = 0,
+        trashSettings = { joinGrace = ARC_DB.trashSettings.joinGrace, activeGap = ARC_DB.trashSettings.activeGap,
+            reviveGrace = ARC_DB.trashSettings.reviveGrace },
     }
     self.activeSession, self.sessionActivity = session, {}
+    self.sessionMemberState, self.sessionRevivedAt = {}, {}
+    self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil
     self.lastLootBoss, self.pendingBonusRoll = nil, nil
     ARC_DB.activeSession = session
     self:UpdateSessionRoster()
@@ -267,7 +369,10 @@ function ARC:EndRaidSession(reason, endedAt)
     PruneSessions()
     ARC_DB.activeSession = nil
     self.activeSession, self.sessionActivity, self.currentEncounter = nil, nil, nil
+    self.sessionMemberState, self.sessionRevivedAt = nil, nil
+    self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil
     self.lastLootBoss, self.pendingBonusRoll = nil, nil
+    self.trashPetOwners = nil
     if reason == nil or reason == "manual" then
         local inRaid, key = RaidInstanceState()
         if inRaid then ARC_DB.autoSessionSuppressedKey = key end
@@ -290,6 +395,7 @@ function ARC:UpdateAutoSession()
         end
         local session = self.activeSession
         if session then
+            session.returningFromWipe = UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") or nil
             session.lastInsideAt = now
             if session.automatic and session.instanceKey and session.instanceKey ~= key then
                 self:EndRaidSession("automatic", now)
@@ -302,8 +408,15 @@ function ARC:UpdateAutoSession()
     else
         local session = self.activeSession
         if session and session.automatic then
+            local grouped = IsInRaid() or IsInGroup()
+            if grouped and UnitIsDeadOrGhost and UnitIsDeadOrGhost("player") then
+                session.returningFromWipe = true
+                self.autoOutsideSince = nil
+                return -- A ghost running back after a wipe has not ended the raid.
+            end
             if not self.autoOutsideSince then self.autoOutsideSince = GetTime() end
-            if GetTime() - self.autoOutsideSince >= AUTO_EXIT_GRACE then
+            local grace = grouped and session.returningFromWipe and AUTO_RETURN_GRACE or AUTO_EXIT_GRACE
+            if GetTime() - self.autoOutsideSince >= grace then
                 self:EndRaidSession("automatic", session.lastInsideAt or now)
                 self.autoOutsideSince = nil
             end
@@ -383,21 +496,25 @@ end
 
 function ARC:SessionEncounterStart(encounterID, encounterName, difficultyID, groupSize)
     local session = self.activeSession
-    if not session or #session.pulls >= MAX_PULLS then return end
+    if not session then return end
+    if self.currentEncounter and self.currentEncounter.encounterID == tonumber(encounterID) then return end
     if self.trashCombatStartedAt then self:EndTrashCombat() end
     local pull = {
         encounterID = tonumber(encounterID) or 0, name = encounterName or "Unknown boss",
         difficulty = tonumber(difficultyID) or 0, groupSize = tonumber(groupSize) or 0,
         startedAt = WallTime(), startedUptime = GetTime(), deaths = {},
     }
-    session.pulls[#session.pulls + 1] = pull
+    -- Still distinguish boss combat from trash once the history cap is reached.
+    if #session.pulls < MAX_PULLS then session.pulls[#session.pulls + 1] = pull
+    else pull.unrecorded = true end
     self.currentEncounter = pull
+    self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil
     self.lastLootBoss = nil
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) and ((not UnitIsConnected) or UnitIsConnected(unit)) then
             local fullName = I.GetUnitIdentity(unit)
             local member = fullName and session.members[fullName]
-            if member and member.presentSince then member.pulls = (member.pulls or 0) + 1 end
+            if member and member.presentSince and not pull.unrecorded then member.pulls = (member.pulls or 0) + 1 end
         end
     end
 end
@@ -405,6 +522,7 @@ end
 function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, groupSize, success)
     local pull = self.currentEncounter
     if not self.activeSession or not pull then return end
+    if tonumber(encounterID) and pull.encounterID ~= tonumber(encounterID) then return end
     pull.endedAt = WallTime()
     pull.duration = math.max(0, GetTime() - (pull.startedUptime or GetTime()))
     pull.success = tonumber(success) == 1
@@ -418,10 +536,11 @@ function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, group
         pull.reset = deathCount <= BOSS_RESET_MAX_DEATHS
     end
     self.currentEncounter = nil
+    self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil
     if pull.success then
         self.lastLootBoss = {
             encounterID = pull.encounterID, name = pull.name, difficulty = pull.difficulty,
-            pullIndex = #self.activeSession.pulls, at = WallTime(),
+            pullIndex = not pull.unrecorded and #self.activeSession.pulls or nil, at = WallTime(),
         }
     else
         self.lastLootBoss = nil
@@ -429,8 +548,25 @@ function ARC:SessionEncounterEnd(encounterID, encounterName, difficultyID, group
     self:RefreshSessionReport()
 end
 
+function ARC:CheckRestoredEncounter()
+    local pull = self.restoredEncounter
+    if not pull or self.currentEncounter ~= pull then return end
+    if EncounterRunning() ~= false then
+        self.restoredEncounterEndedSince = nil
+        return
+    end
+    local now = GetTime()
+    self.restoredEncounterEndedSince = self.restoredEncounterEndedSince or now
+    if now - self.restoredEncounterEndedSince < 6 then return end
+    -- ENCOUNTER_END can be missed during reload. Never invent a kill or wipe.
+    pull.endedAt, pull.duration = WallTime(), math.max(0, now - (pull.startedUptime or now))
+    pull.interrupted, pull.success = true, false
+    self.currentEncounter, self.restoredEncounter, self.restoredEncounterEndedSince = nil, nil, nil
+    self:RefreshSessionReport()
+end
+
 function ARC:StartTrashCombat(enemyGUID)
-    if not self.activeSession or self.currentEncounter or self.trashCombatStartedAt then return end
+    if not self.activeSession or self.currentEncounter or EncounterRunning() == true or self.trashCombatStartedAt then return end
     local now = GetTime()
     self.trashCombatStartedAt = now
     self.trashLastTick = now
@@ -442,20 +578,19 @@ function ARC:StartTrashCombat(enemyGUID)
     if self.lastLootBoss then self.lastLootBoss.afterTrash = true end
     self.sessionActivity = self.sessionActivity or {}
     self.sessionInactiveCredited = {}
+    self.sessionParticipated, self.sessionReviveUntil = {}, {}
     for _, unit in ipairs(I.GetGroupUnits()) do
         if UnitExists(unit) then
             local fullName = I.GetUnitIdentity(unit)
             if fullName then
                 self.sessionActivity[fullName] = now
-                local petUnit
-                if unit == "player" then
-                    petUnit = "pet"
-                else
-                    local partyIndex = unit:match("^party(%d+)$")
-                    local raidIndex = unit:match("^raid(%d+)$")
-                    if partyIndex then petUnit = "partypet" .. partyIndex
-                    elseif raidIndex then petUnit = "raidpet" .. raidIndex end
+                ObserveMember(unit, fullName, now)
+                local revived = self.sessionRevivedAt and self.sessionRevivedAt[fullName]
+                if revived and now - revived < self:GetTrashSettings().reviveGrace then
+                    self.sessionReviveUntil[fullName] = revived + self:GetTrashSettings().reviveGrace
+                    self.sessionParticipated[fullName] = true
                 end
+                local petUnit = MemberPetUnit(unit)
                 local petGUID = petUnit and UnitExists(petUnit) and UnitGUID(petUnit)
                 if petGUID then self.trashPetOwners[petGUID] = fullName end
             end
@@ -466,8 +601,11 @@ end
 local function CreditTrashInterval(fullName, member, now, checkEligibility)
     local lastActivity = ARC.sessionActivity and ARC.sessionActivity[fullName]
     if not member or not lastActivity then return end
-    local interval = now - lastActivity
-    if interval < INACTIVE_AFTER then return end
+    local graceUntil = ARC.sessionReviveUntil and ARC.sessionReviveUntil[fullName]
+    local interval = math.max(0, now - math.max(lastActivity, graceUntil or lastActivity))
+    local settings = ARC:GetTrashSettings()
+    local threshold = ARC.sessionParticipated and ARC.sessionParticipated[fullName] and settings.activeGap or settings.joinGrace
+    if interval < threshold then return end
     if checkEligibility then
         local eligible = false
         for _, unit in ipairs(I.GetGroupUnits()) do
@@ -495,22 +633,26 @@ function ARC:EndTrashCombat(endedAt)
     session.trashCombats = session.trashCombats + 1
     session.trashCombatSeconds = session.trashCombatSeconds + (endedAt - self.trashCombatStartedAt)
     self.trashCombatStartedAt, self.trashLastTick, self.trashLastEvidence = nil, nil, nil
-    self.trashEnemies, self.trashAllDeadAt, self.trashPetOwners = nil, nil, nil
+    self.trashEnemies, self.trashAllDeadAt = nil, nil
     self.sessionInactiveCredited = nil
+    self.sessionParticipated, self.sessionReviveUntil = nil, nil
 end
 
 function ARC:AccumulateTrashInactivity(now)
     local session = self.activeSession
     if not session or not self.trashCombatStartedAt or self.currentEncounter then return end
     now = math.min(now, self.trashLastEvidence or now)
-    local delta = math.max(0, now - (self.trashLastTick or now))
+    local previous = self.trashLastTick or now
     self.trashLastTick = now
     for _, unit in ipairs(I.GetGroupUnits()) do
+        local fullName = UnitExists(unit) and I.GetUnitIdentity(unit)
+        local state = fullName and ObserveMember(unit, fullName, GetTime())
         if UnitExists(unit) and ((not UnitIsConnected) or UnitIsConnected(unit)) and
             ((not UnitIsDeadOrGhost) or not UnitIsDeadOrGhost(unit)) then
             local fullName = I.GetUnitIdentity(unit)
             local member = fullName and session.members[fullName]
             if member then
+                local delta = math.max(0, now - math.max(previous, state and state.eligibleSince or previous))
                 member.trashEligibleSeconds = (member.trashEligibleSeconds or 0) + delta
             end
             CreditTrashInterval(fullName, member, now)
@@ -657,7 +799,10 @@ local function TooltipVariant(link)
     if lootScanTip.ClearLines then lootScanTip:ClearLines() end
     if lootScanTip.SetOwner then pcall(lootScanTip.SetOwner, lootScanTip, UIParent, "ANCHOR_NONE") end
     local ok = pcall(lootScanTip.SetHyperlink, lootScanTip, link)
-    if not ok then return nil, nil end
+    if not ok then
+        if lootScanTip.Hide then pcall(lootScanTip.Hide, lootScanTip) end
+        return nil, nil
+    end
     local text = {}
     for index = 1, 20 do
         local line = _G["ARCSessionLootScanTooltipTextLeft" .. index]
@@ -671,11 +816,20 @@ local function TooltipVariant(link)
     local forged
     if HasTooltipLabel(joined, "warforged", _G.ITEM_WARFORGED, _G.WARFORGED) then forged = "Warforged"
     elseif HasTooltipLabel(joined, "thunderforged", _G.ITEM_THUNDERFORGED, _G.THUNDERFORGED) then forged = "Thunderforged" end
-    return heroic, forged
+    if lootScanTip.Hide then pcall(lootScanTip.Hide, lootScanTip) end
+    return heroic, forged, joined ~= ""
 end
 
 local function ResolveLootMetadata(entry)
     if not entry.itemLink then return true end
+    if entry.metadataResolvedLink == entry.itemLink and not entry.metadataPending and not entry.variantPending then return true end
+    if entry.metadataResolvedLink ~= entry.itemLink then
+        if entry.metadataResolvedLink then
+            entry.itemName, entry.quality, entry.itemLevel, entry.texture = nil, nil, nil, nil
+            entry.difficultyTag, entry.forgedTag = nil, nil
+        end
+        entry.variantAttempts, entry.metadataRetryAt = nil, nil
+    end
     local itemInfo = type(GetItemInfo) == "function" and { pcall(GetItemInfo, entry.itemLink) } or nil
     if itemInfo and itemInfo[1] and itemInfo[2] then
         entry.itemName = itemInfo[2]
@@ -687,7 +841,7 @@ local function ResolveLootMetadata(entry)
         local ok, texture = pcall(GetItemIcon, entry.itemID or entry.itemLink)
         if ok then entry.texture = texture end
     end
-    local heroic, forged = TooltipVariant(entry.itemLink)
+    local heroic, forged, variantLoaded = TooltipVariant(entry.itemLink)
     if heroic then entry.difficultyTag = "Heroic"
     elseif entry.sourceType == "boss" then
         if entry.difficulty == 5 or entry.difficulty == 6 then entry.difficultyTag = "Heroic"
@@ -697,21 +851,39 @@ local function ResolveLootMetadata(entry)
     end
     if forged then entry.forgedTag = forged end
     entry.metadataPending = not entry.itemName or not entry.quality
+    entry.metadataResolvedLink = entry.itemLink
+    entry.variantAttempts = (entry.variantAttempts or 0) + 1
+    -- A cold/unsupported tooltip must not keep every resolved item hot forever.
+    -- Allow a few delayed retries for variant labels, then keep best-effort tags.
+    entry.variantPending = not variantLoaded and entry.variantAttempts < 3 or nil
+    entry.metadataRetryAt = GetTime() + 5
     return not entry.metadataPending
 end
 
+local lootResolutionCursors = setmetatable({}, { __mode = "k" })
 function ARC:ResolveSessionLoot(session, final)
     session = session or self.activeSession
     if not session or type(session.loot) ~= "table" then return end
+    local reads, now, total = 0, GetTime(), #session.loot
+    local start = lootResolutionCursors[session] or total
+    for step = 1, total do
+        local index = ((start - step) % total) + 1
+        local entry = session.loot[index]
+        if type(entry) == "table" and entry.itemLink then
+            local unresolved = entry.metadataResolvedLink ~= entry.itemLink or entry.metadataPending or entry.variantPending
+            if unresolved and (final or not entry.metadataRetryAt or now >= entry.metadataRetryAt or entry.metadataRetryAt - now > 5) then
+                ResolveLootMetadata(entry)
+                reads = reads + 1
+            end
+        end
+        lootResolutionCursors[session] = index - 1
+        if not final and reads >= 25 then break end
+    end
     for index = #session.loot, 1, -1 do
         local entry = session.loot[index]
-        if type(entry) ~= "table" then
+        if type(entry) ~= "table" or (entry.epicOnly and
+            ((entry.quality and entry.quality < 4) or (final and not entry.quality))) then
             table.remove(session.loot, index)
-        elseif entry.itemLink then
-            ResolveLootMetadata(entry)
-            if entry.epicOnly and ((entry.quality and entry.quality < 4) or (final and not entry.quality)) then
-                table.remove(session.loot, index)
-            end
         end
     end
 end
@@ -850,6 +1022,7 @@ end
 
 local ACTIVE_EVENTS = {
     SWING_DAMAGE=true, RANGE_DAMAGE=true, SPELL_DAMAGE=true, SPELL_PERIODIC_DAMAGE=true,
+    SWING_MISSED=true, RANGE_MISSED=true, SPELL_MISSED=true, SPELL_CAST_START=true,
     DAMAGE_SHIELD=true, SPELL_HEAL=true, SPELL_PERIODIC_HEAL=true,
     SPELL_CAST_SUCCESS=true, SPELL_INTERRUPT=true, SPELL_DISPEL=true, SPELL_STOLEN=true,
 }
@@ -861,16 +1034,25 @@ local TRASH_EVIDENCE_EVENTS = {
 }
 
 local function ResolveCombatMember(session, sourceGUID, sourceName)
+    if sourceGUID then
+        for key, candidate in pairs(session.members) do
+            if candidate.presentSince and candidate.guid == sourceGUID then return key, candidate, false end
+        end
+        local owner = ARC.trashPetOwners and ARC.trashPetOwners[sourceGUID]
+        if owner and session.members[owner] then return owner, session.members[owner], true end
+        return nil -- Never confuse a same-named pet/NPC with a raid player.
+    end
     local fullName = PlayerKey(sourceName)
     local member = fullName and session.members[fullName]
-    if member then return fullName, member, false end
+    if member and member.presentSince then return fullName, member, false end
+    local matchedKey, matchedMember
     for key, candidate in pairs(session.members) do
-        if candidate.name == sourceName or key == sourceName then return key, candidate, false end
+        if candidate.presentSince and (candidate.name == sourceName or key == sourceName) then
+            if matchedKey then return nil end
+            matchedKey, matchedMember = key, candidate
+        end
     end
-    local ownerName = sourceGUID and ARC.trashPetOwners and ARC.trashPetOwners[sourceGUID]
-    if ownerName and session.members[ownerName] then
-        return ownerName, session.members[ownerName], true
-    end
+    if matchedKey then return matchedKey, matchedMember, false end
 end
 
 local function HasTrackedEnemy(enemies)
@@ -883,7 +1065,7 @@ function ARC:SessionCombatLog(...)
     if not session then return end
     local _, subevent, _, sourceGUID, sourceName, _, _, destGUID, destName = ...
     local sourceFullName, sourceMember, sourceIsPet = ResolveCombatMember(session, sourceGUID, sourceName)
-    local _, destMember = ResolveCombatMember(session, destGUID, destName)
+    local destFullName, destMember, destIsPet = ResolveCombatMember(session, destGUID, destName)
 
     -- A real exchange between a group member (or their pet) and an external
     -- unit opens/keeps the pack. Combat flags alone are deliberately ignored.
@@ -907,11 +1089,18 @@ function ARC:SessionCombatLog(...)
     if ACTIVE_EVENTS[subevent] and sourceMember and not sourceIsPet and self.trashCombatStartedAt and not self.currentEncounter then
         local fullName, member = sourceFullName, sourceMember
         if fullName and member then
+            for _, unit in ipairs(I.GetGroupUnits()) do
+                if UnitExists(unit) and I.GetUnitIdentity(unit) == fullName then
+                    ObserveMember(unit, fullName, GetTime())
+                    break
+                end
+            end
             -- Close the previous interval before overwriting its start time.
             -- Accumulation is idempotent, even if a tick just credited it.
             CreditTrashInterval(fullName, member, math.min(GetTime(), self.trashLastEvidence or GetTime()), true)
             self.sessionActivity = self.sessionActivity or {}
             self.sessionActivity[fullName] = GetTime()
+            self.sessionParticipated[fullName] = true
             if self.sessionInactiveCredited then self.sessionInactiveCredited[fullName] = nil end
         end
     end
@@ -922,15 +1111,18 @@ function ARC:SessionCombatLog(...)
         if not HasTrackedEnemy(self.trashEnemies) then self.trashAllDeadAt = GetTime() end
     end
 
-    if subevent == "UNIT_DIED" and destName then
-        local fullName, member = PlayerKey(destName), nil
-        member = fullName and session.members[fullName]
-        if not member then
-            for key, candidate in pairs(session.members) do
-                if candidate.name == destName or key == destName then fullName, member = key, candidate; break end
-            end
-        end
+    if subevent == "UNIT_DIED" and destName and not destIsPet then
+        local fullName, member = destFullName, destMember
         if member then
+            if self.trashCombatStartedAt then
+                CreditTrashInterval(fullName, member, math.min(GetTime(), self.trashLastEvidence or GetTime()))
+                self.sessionActivity[fullName] = GetTime()
+                self.sessionInactiveCredited[fullName] = nil
+            end
+            self.sessionMemberState = self.sessionMemberState or {}
+            local state = self.sessionMemberState[fullName] or {}
+            state.dead = true
+            self.sessionMemberState[fullName] = state
             member.deaths = (member.deaths or 0) + 1
             if self.currentEncounter then
                 member.bossDeaths = (member.bossDeaths or 0) + 1
@@ -1102,7 +1294,9 @@ local function BuildReport(session)
         end
     end
     lines[#lines + 1] = ""
-    lines[#lines + 1] = L("Trash idle is estimated after %ds without personal activity; pet-only activity never credits its owner.", INACTIVE_AFTER)
+    local settings = ARC:GetTrashSettings(session)
+    lines[#lines + 1] = L("Trash idle: %ds to join, %ds between personal actions, %ds recovery after revival. Pet-only activity never credits its owner.",
+        settings.joinGrace, settings.activeGap, settings.reviveGrace)
     return table.concat(lines, "\n")
 end
 
@@ -1748,6 +1942,7 @@ end
 
 local tracker = CreateFrame("Frame", "ARCSessionEventFrame")
 for _, event in ipairs({ "PLAYER_ENTERING_WORLD", "ZONE_CHANGED_NEW_AREA", "GROUP_ROSTER_UPDATE", "PLAYER_FLAGS_CHANGED",
+    "UNIT_HEALTH", "UNIT_FLAGS", "UNIT_PET", "PLAYER_ALIVE", "PLAYER_UNGHOST",
     "ENCOUNTER_START", "ENCOUNTER_END", "COMBAT_LOG_EVENT_UNFILTERED", "CHAT_MSG_LOOT" }) do
     tracker:RegisterEvent(event)
 end
@@ -1760,7 +1955,14 @@ tracker:SetScript("OnEvent", function(_, event, ...)
     if event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA" then
         ARC:UpdateAutoSession()
         ARC:UpdateSessionRoster()
-    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_FLAGS_CHANGED" then
+    elseif event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_FLAGS_CHANGED" or event == "UNIT_PET" then
+        ARC:UpdateSessionRoster()
+        ARC:UpdateAutoSession()
+    elseif event == "UNIT_HEALTH" or event == "UNIT_FLAGS" then
+        local unit = ...
+        local fullName = unit and UnitExists(unit) and I.GetUnitIdentity(unit)
+        if fullName and ARC.activeSession and ARC.activeSession.members[fullName] then ObserveMember(unit, fullName, GetTime()) end
+    elseif event == "PLAYER_ALIVE" or event == "PLAYER_UNGHOST" then
         ARC:UpdateSessionRoster()
         ARC:UpdateAutoSession()
     elseif event == "ENCOUNTER_START" then
@@ -1784,6 +1986,8 @@ tracker:SetScript("OnUpdate", function(_, elapsed)
     tracker.rosterElapsed = (tracker.rosterElapsed or 0) + elapsed
     if tracker.elapsed >= 1 then
         tracker.elapsed = 0
+        if ARC.activeSession then ARC.activeSession.lastUpdatedAt = WallTime() end
+        ARC:CheckRestoredEncounter()
         ARC:TickTrashInactivity()
         ARC:UpdateAutoSession()
         ARC:ResolveSessionLoot()

@@ -41,6 +41,9 @@ depend on the client's cache. Refresh the report to capture changed equipment.
   tank Primal Diamonds. Fleet and the PvP/CC metas are rejected. MoP Primal and
   legendary metas have no old color-count activation requirement; an empty or
   unreadable meta socket is handled by the normal missing/Unverified rules.
+  If spec/main stat is unavailable, an otherwise valid stat-specific meta is
+  Unverified rather than condemned. Known PvP or weak gems still fail without
+  needing a specialization.
 - For an uncatalogued gem with client item data, quality below 3 or gem ilvl
   below 90 identifies a weak/old tier. Available live stats can additionally
   identify wrong primary/PvP stats. Other uncatalogued gems remain Unverified.
