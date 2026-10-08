@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_UI.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before UI/ARC_UI.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local ClassColor = I.ClassColor
 local DurabilityColor = I.DurabilityColor

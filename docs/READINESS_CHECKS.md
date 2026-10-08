@@ -58,7 +58,7 @@ avoids false missing seals and similar private-server aura omissions. The local
 player remains fully checked.
 
 `SELF_BUFF_RULES`, `SHAMAN_SHIELDS`, `SYMBIOSIS`, `TANK_BUFFS`, `RIGHTEOUS_FURY`
-and `SACRIFICE` in `ARC_Core.lua` are the
+and `SACRIFICE` in `Core/ARC_Core.lua` are the
 editable policy. Verify actual 5.4.8 `UnitBuff` spell IDs before adding a rule.
 The existing aura scanner retains both spell IDs and names, so a server's
 localized spell-name fallback can still match an altered ID.

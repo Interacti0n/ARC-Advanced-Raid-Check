@@ -28,7 +28,7 @@ jobs:
           sudo apt-get install --yes lua5.1
       - name: Check syntax and run addon tests
         run: |
-          for file in ./*.lua tests/player_check.lua; do
+          for file in ARC.lua Core/*.lua UI/*.lua Locales/*.lua tests/player_check.lua; do
             luac5.1 -p "$file"
           done
           lua5.1 tests/player_check.lua

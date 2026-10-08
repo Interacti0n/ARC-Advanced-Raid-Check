@@ -14,6 +14,7 @@ def read(root, name):
 
 
 def manifest(root, tag=""):
+    root = Path(root).resolve()
     toc = read(root, "ARC.toc")
     match = re.search(r"^## Version:\s*(\S+)\s*$", toc, re.M)
     if not match or not re.fullmatch(VERSION, match[1]):
@@ -21,7 +22,25 @@ def manifest(root, tag=""):
     version = match[1]
     if tag and tag != "v" + version:
         raise ValueError(f"Release tag {tag!r} must equal v{version}; update sources before tagging")
-    core = re.search(r'ARC\.VERSION\s*=\s*"([^"]+)"', read(root, "ARC_Core.lua"))
+    modules = [line.strip() for line in toc.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    # Accept only the runtime layout, never arbitrary/traversing TOC paths.
+    module_path = r"(?:ARC\.lua|(?:Core|UI|Locales)/ARC(?:_[A-Za-z]+)+\.lua)"
+    if len(modules) != len({name.casefold() for name in modules}) or any(not re.fullmatch(module_path, name) for name in modules):
+        raise ValueError("TOC must contain unique ARC Lua paths within Core, UI or Locales")
+    if not modules or modules[0] != "Core/ARC_Core.lua" or modules[-1] != "ARC.lua" or "UI/ARC_PlayerCheck.lua" not in modules:
+        raise ValueError("Invalid ARC.toc module order or missing player-check module")
+    # Validate every path component before reading a module or packaging it.
+    names = ["ARC.toc", *modules, "changelog.txt", "LICENSE"]
+    for name in names:
+        path = root / name
+        component = root
+        for part in Path(name).parts:
+            component = component / part
+            if component.is_symlink():
+                raise ValueError(f"Unsafe package source: {name}")
+        if not path.is_file() or root not in path.resolve().parents:
+            raise ValueError(f"Missing or unsafe package source: {name}")
+    core = re.search(r'ARC\.VERSION\s*=\s*"([^"]+)"', read(root, "Core/ARC_Core.lua"))
     if not core or core[1] != version:
         raise ValueError("Core and TOC versions differ")
     if f"Current version: **{version}**" not in read(root, "README.md"):
@@ -29,18 +48,8 @@ def manifest(root, tag=""):
     sections = re.split(r"(?m)^v(\d+\.\d+\.\d+) CHANGES\s*\n", read(root, "changelog.txt"))
     if len(sections) < 3 or sections[0].strip() or sections[1] != version or not sections[2].strip():
         raise ValueError("The first changelog section must describe the TOC version")
-    modules = [line.strip() for line in toc.splitlines() if line.strip() and not line.lstrip().startswith("#")]
-    if not modules or modules[0] != "ARC_Core.lua" or modules[-1] != "ARC.lua" or "ARC_PlayerCheck.lua" not in modules:
-        raise ValueError("Invalid ARC.toc module order or missing player-check module")
-    if len(modules) != len(set(modules)) or any(not re.fullmatch(r"ARC(?:_[A-Za-z]+)*\.lua", name) for name in modules):
-        raise ValueError("TOC must contain unique ARC Lua filenames, not paths")
     # The install ZIP deliberately excludes README, docs, tests and build tooling.
-    # The third-party catalog's MIT notice is also embedded in ARC_Gear.lua.
-    names = ["ARC.toc", *modules, "changelog.txt", "LICENSE"]
-    for name in names:
-        path = root / name
-        if not path.is_file() or path.is_symlink() or root.resolve() not in path.resolve().parents:
-            raise ValueError(f"Missing or unsafe package source: {name}")
+    # The third-party catalog's MIT notice is embedded in Core/ARC_Gear.lua.
     notes = "# ARC — Advanced Raid Check " + version + "\n\n" + sections[2].strip() + (
         "\n\nInstall the attached ARC ZIP into Interface/AddOns (ARC/ARC.toc). "
         "Fully exit and restart WoW after updating; /reload may retain an old file list.\n"

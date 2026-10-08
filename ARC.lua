@@ -1,5 +1,5 @@
 local ADDON_NAME = ...
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before ARC.lua; fully restart WoW after updating ARC")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local ARC_InitDB = I.ARC_InitDB
 local RefreshUnitPublicData = I.RefreshUnitPublicData
@@ -26,7 +26,7 @@ local function HasPlayerCheck(notify, repeatWarning)
     end
     if notify and (repeatWarning or not playerCheckWarningShown) then
         playerCheckWarningShown = true
-        print("|cffffcc00ARC:|r " .. L("Player check module is not loaded (ARC_PlayerCheck.lua). Fully exit WoW and start it again; /reload is not enough after adding addon files. If this persists, reinstall the complete ARC update and check earlier Lua errors."))
+        print("|cffffcc00ARC:|r " .. L("Player check module is not loaded (UI/ARC_PlayerCheck.lua). Fully exit WoW and start it again; /reload is not enough after adding addon files. If this persists, reinstall the complete ARC update and check earlier Lua errors."))
     end
     return false
 end

@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Localization.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before Locales/ARC_Localization.lua")
 
 local BASE_LOCALE = "enGB"
 local SUPPORTED = { auto=true, enGB=true, enUS=true, skSK=true, csCZ=true }

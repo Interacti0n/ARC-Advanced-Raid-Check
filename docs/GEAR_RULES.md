@@ -1,7 +1,7 @@
 # ARC — Advanced Raid Check: MoP PvE gear policy
 
 The raid tooltip and standalone player check call the same analyzer in
-`ARC_Gear.lua`. This is a conservative raid-policy check, not a simulation or
+`Core/ARC_Gear.lua`. This is a conservative raid-policy check, not a simulation or
 best-in-slot recommendation. The report shows confirmed problems first and
 unverified checks separately. The full equipment list stays in Blizzard Inspect.
 
@@ -148,11 +148,11 @@ commit `970d5cc4c8a3c7db0559020b481aaceda5c523f2`:
 
 The source targets MoP Classic. ARC uses legacy item/effect IDs and its own
 5.4.8 policy; it does not assume all Classic-specific spells/features apply.
-The MIT copyright/permission notice is retained in `ARC_Gear.lua` and in
+The MIT copyright/permission notice is retained in `Core/ARC_Gear.lua` and in
 [`WOWSIMS_LICENSE.txt`](WOWSIMS_LICENSE.txt). This is bundled data, not a runtime
 library, addon-channel dependency or online lookup.
 
-To customize, edit `GEM_RULE_DATA` or `ENCHANT_RULE_DATA` in `ARC_Gear.lua`.
+To customize, edit `GEM_RULE_DATA` or `ENCHANT_RULE_DATA` in `Core/ARC_Gear.lua`.
 They are exposed as `ARC.GEAR_RULES.gems` / `.enchants`. Validate an actual
 item link, the effect/item ID, slot and stats first. Enchant fields include
 `top`, `stats`, `slot`, optional `kind`, `class`, `role` and `pvp`. Gem fields

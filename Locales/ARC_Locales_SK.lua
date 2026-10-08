@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Localization.lua must load before ARC_Locales_SK.lua")
+local ARC = assert(_G.ARC, "Locales/ARC_Localization.lua must load before Locales/ARC_Locales_SK.lua")
 
 ARC:RegisterLocale("skSK", {
     ["General"] = "Všeobecné",
@@ -278,7 +278,7 @@ ARC:RegisterLocale("skSK", {
     ["Everyone with available aura data has flask and food."] = "Všetci hráči s dostupnými aura dátami majú flask aj jedlo.",
     [" (%d player(s) could not be verified.)"] = " (%d hráčov sa nepodarilo overiť.)",
     ["Skipped %d player(s) with unavailable aura data."] = "Preskočených %d hráčov s nedostupnými aura dátami.",
-    ["Player check module is not loaded (ARC_PlayerCheck.lua). Fully exit WoW and start it again; /reload is not enough after adding addon files. If this persists, reinstall the complete ARC update and check earlier Lua errors."] = "Modul kontroly hráča nie je načítaný (ARC_PlayerCheck.lua). Úplne ukonči WoW a znova ho spusti; po pridaní súborov addonu /reload nestačí. Ak problém pretrváva, preinštaluj kompletnú aktualizáciu ARC a skontroluj skoršie Lua chyby.",
+    ["Player check module is not loaded (UI/ARC_PlayerCheck.lua). Fully exit WoW and start it again; /reload is not enough after adding addon files. If this persists, reinstall the complete ARC update and check earlier Lua errors."] = "Modul kontroly hráča nie je načítaný (UI/ARC_PlayerCheck.lua). Úplne ukonči WoW a znova ho spusti; po pridaní súborov addonu /reload nestačí. Ak problém pretrváva, preinštaluj kompletnú aktualizáciu ARC a skontroluj skoršie Lua chyby.",
     ["  /arc            - show/hide the window"] = "  /arc            - zobraziť/skryť okno",
     ["  /arc lock       - lock window position"] = "  /arc lock       - zamknúť pozíciu okna",
     ["  /arc unlock     - unlock window position"] = "  /arc unlock     - odomknúť pozíciu okna",

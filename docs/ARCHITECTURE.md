@@ -8,23 +8,29 @@ other library.
 
 | File | Responsibility |
 | --- | --- |
-| `ARC_Core.lua` | Database defaults, roster, aura scanning and addon communication |
-| `ARC_Localization.lua` | English fallback, locale selection and live UI refresh |
-| `ARC_Locales_SK.lua` | Slovak translations |
-| `ARC_Locales_CZ.lua` | Czech translations |
-| `ARC_Gear.lua` | Upgrade-aware item level, item parsing and configurable gear rules |
-| `ARC_Inspect.lua` | Inspect queue, specialization and remote equipment fallback |
-| `ARC_UI.lua` | Main roster, tooltips, verdict banner and announcements |
-| `ARC_PlayerCheck.lua` | Standalone report plus inspect/context-menu integration |
-| `ARC_Session.lua` | Automatic session lifecycle, attendance, encounters, deaths and activity tables |
-| `ARC_Options.lua` | Minimap button and Interface Options panel |
+| `Core/ARC_Core.lua` | Database defaults, roster, aura scanning and addon communication |
+| `Locales/ARC_Localization.lua` | English fallback, locale selection and live UI refresh |
+| `Locales/ARC_Locales_SK.lua` | Slovak translations |
+| `Locales/ARC_Locales_CZ.lua` | Czech translations |
+| `Core/ARC_Gear.lua` | Upgrade-aware item level, item parsing and configurable gear rules |
+| `Core/ARC_Inspect.lua` | Inspect queue, specialization and remote equipment fallback |
+| `UI/ARC_UI.lua` | Main roster, tooltips, verdict banner and announcements |
+| `UI/ARC_PlayerCheck.lua` | Standalone report plus inspect/context-menu integration |
+| `Core/ARC_Session.lua` | Automatic session lifecycle, attendance, encounters, deaths and activity tables |
+| `UI/ARC_Options.lua` | Minimap button and Interface Options panel |
 | `ARC.lua` | Event dispatch, update loop and slash commands |
 | `ARC.toc` | Metadata, saved variables and module load order |
 
-The order in `ARC.toc` is significant. `ARC_Core.lua` initializes the shared
+The order in `ARC.toc` is significant. `Core/ARC_Core.lua` initializes the shared
 table and must remain first; `ARC.lua` connects all modules and must remain
 last. When adding a module, update the TOC and require a full client restart
 during testing because the MoP client may cache the previous file list.
+
+Runtime files are grouped into `Core/`, `UI/` and `Locales/`; only the TOC and
+event/command entry point stay at the root. Existing filenames, namespaces and
+load order are preserved. `ARC_Session.lua` still owns its report UI as well as
+tracking; this directory-only reorganization does not split or rewrite modules.
+`docs/`, `tests/`, `scripts/` and `.github/` are repository-only support folders.
 
 ## Stable compatibility identifiers
 
@@ -43,7 +49,7 @@ with compatible older clients.
 ## Saved-variable migrations
 
 `ARC_DB.schemaVersion` is independent from the addon release version. Database
-defaults are applied after guarded, incremental migrations in `ARC_Core.lua`.
+defaults are applied after guarded, incremental migrations in `Core/ARC_Core.lua`.
 Each migration advances the schema only after success and must be idempotent so
 an interrupted step can safely run again. Unknown fields and session history
 are preserved. If an older addon sees a newer schema, it keeps that version and
@@ -88,8 +94,12 @@ freshness rules.
 The GitHub repository contains documentation, tests and release tooling. The
 installable ZIP contains only the TOC-listed `.lua` modules, `ARC.toc`,
 `changelog.txt` and `LICENSE`, all below one `ARC/` directory. The
-WoWSims-derived catalog notice is embedded in `ARC_Gear.lua`, so the required
+WoWSims-derived catalog notice is embedded in `Core/ARC_Gear.lua`, so the required
 notice remains in the minimal package.
+Packaging preserves the runtime subdirectories and accepts only unique ARC Lua
+paths in the approved folders (plus root `ARC.lua`). Absolute/traversing paths,
+case-colliding entries and symlinked path components are rejected. Unlisted Lua
+files and obsolete copies at the root are never included.
 
 See [Release checklist](RELEASE_CHECKLIST.md) for packaging and publishing.
 

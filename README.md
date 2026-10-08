@@ -81,10 +81,10 @@ The product name is **Advanced Raid Check**, but technical identifiers remain
 
 ## Version
 
-Current version: **1.10.0**
+Current version: **1.10.1**
 
 ## License
 
 ARC is released under the [MIT License](LICENSE). The embedded WoWSims-derived
 catalog retains its [MIT notice](docs/WOWSIMS_LICENSE.txt), also included in
-`ARC_Gear.lua`.
+`Core/ARC_Gear.lua`.

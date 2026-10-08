@@ -29,7 +29,7 @@
    changelog versions, then uploads `ARC-X.Y.Z.zip` and `ARC-X.Y.Z.zip.sha256`.
    The ZIP contains only the TOC-listed Lua modules, TOC, changelog and main license
    under `ARC/`. README/docs/tests/tooling are excluded. The third-party MIT notice
-   remains embedded in `ARC_Gear.lua`. Announce the release only after assets appear.
+   remains embedded in `Core/ARC_Gear.lua`. Announce the release only after assets appear.
 
 The release event packages the exact event commit, not a later moving `main`.
 Validation has read-only permissions; only the separate upload job can write
@@ -68,7 +68,24 @@ and [GitHub CLI upload documentation](https://cli.github.com/manual/gh_release_u
 A local `candidate` ZIP is not a published release or proof of in-game testing.
 Do not label the version verified on the server until the live checklist passes.
 
-## Current 1.10.0 local preflight — 2026-10-08
+## Current 1.10.1 directory reorganization
+
+Runtime code is organized under `Core/`, `UI/` and `Locales/`; TOC order and
+compatibility identifiers remain unchanged. Run the normal Lua/stale-TOC suites
+and the expanded release-tooling suite before committing. Actions syntax checks
+must include all three folders, not just root Lua files. Verify that the ZIP
+preserves the subfolders and still excludes README/docs/tests/tooling. Fully
+restart the live client after moving files. Do not move or replace the already
+published 1.10.0 tag/assets.
+
+Local preflight on 2026-10-08 passed all 162 mocked ARC regression tests,
+the optional-module/stale-TOC checks, syntax loading of all TOC modules and
+the test harness, and all 11 release-tooling tests. The candidate ZIP contains
+14 files with the new runtime subfolders and no docs/tests/tooling. Lua tests
+ran through Fengari locally; native Lua 5.1 remains the Actions check. This is
+not a published release or an in-game verification of the moved file paths.
+
+## Previous 1.10.0 local preflight — 2026-10-08
 
 - 162 mocked ARC regression tests passed, including join/activity/revival
   timing, reconnect/rejoin, same-named pets, runback/reload recovery, banner

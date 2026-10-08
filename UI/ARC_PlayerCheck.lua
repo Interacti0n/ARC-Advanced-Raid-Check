@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_PlayerCheck.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before UI/ARC_PlayerCheck.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local function L(key, ...)
     if ARC.Text then return ARC:Text(key, ...) end

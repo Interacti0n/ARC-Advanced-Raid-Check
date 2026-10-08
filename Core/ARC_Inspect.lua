@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Inspect.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before Core/ARC_Inspect.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local GetGroupUnits = I.GetGroupUnits
 local GetUnitIdentity = I.GetUnitIdentity

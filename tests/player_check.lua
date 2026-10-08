@@ -228,11 +228,11 @@ for line in (tocText .. "\n"):gmatch("(.-)\n") do
         files[#files + 1], seen[file] = file, true
     end
 end
-assert(files[1] == "ARC_Core.lua" and files[#files] == "ARC.lua", "Invalid TOC load order")
-assert(seen["ARC_PlayerCheck.lua"], "Player check must be included in ARC.toc")
+assert(files[1] == "Core/ARC_Core.lua" and files[#files] == "ARC.lua", "Invalid TOC load order")
+assert(seen["UI/ARC_PlayerCheck.lua"], "Player check must be included in ARC.toc")
 for _, file in ipairs(files) do
-    if not staleTOC or (file ~= "ARC_Localization.lua" and file ~= "ARC_Locales_SK.lua" and
-        file ~= "ARC_Locales_CZ.lua" and file ~= "ARC_PlayerCheck.lua" and file ~= "ARC_Session.lua") then
+    if not staleTOC or (file ~= "Locales/ARC_Localization.lua" and file ~= "Locales/ARC_Locales_SK.lua" and
+        file ~= "Locales/ARC_Locales_CZ.lua" and file ~= "UI/ARC_PlayerCheck.lua" and file ~= "Core/ARC_Session.lua") then
         assert(loadfile(file))("ARC")
     end
 end

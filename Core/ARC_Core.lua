@@ -51,13 +51,14 @@ SLASH COMMANDS
 
 FILES
   ARC.toc             metadata and load order
-  ARC_Core.lua        database, roster, buffs and communication
-  ARC_Gear.lua        item level, gems, enchants and stat rules
-  ARC_Inspect.lua     inspect fallback
-  ARC_Session.lua     raid-session attendance, encounters and activity report
-  ARC_UI.lua          main window and rendering
-  ARC_PlayerCheck.lua inspect button and standalone player report
-  ARC_Options.lua     minimap button and settings
+  Core/ARC_Core.lua        database, roster, buffs and communication
+  Core/ARC_Gear.lua        item level, gems, enchants and stat rules
+  Core/ARC_Inspect.lua     inspect fallback
+  Core/ARC_Session.lua     raid-session attendance, encounters and activity report
+  UI/ARC_UI.lua            main window and rendering
+  UI/ARC_PlayerCheck.lua   inspect button and standalone player report
+  UI/ARC_Options.lua       minimap button and settings
+  Locales/                locale selection and Slovak/Czech translations
   ARC.lua             events and slash commands
   README.md           installation and usage guide
   changelog.txt       release history
@@ -78,7 +79,7 @@ local ADDON_NAME = ...
 local ARC = {}
 _G.ARC = ARC
 
-ARC.VERSION       = "1.10.0"
+ARC.VERSION       = "1.10.1"
 ARC.NAME          = "Advanced Raid Check"
 ARC.COMM_PREFIX   = "ARC1"                 -- <= 16 chars, addon message prefix
 ARC.COMM_MAX_BYTES = 255                   -- legacy MoP addon-message payload limit

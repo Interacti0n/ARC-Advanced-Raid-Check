@@ -7,7 +7,8 @@ python -B -m unittest discover -s tests -p test_release.py -v
 ```
 
 They cover exact minimal ZIP contents (no README/docs/tests), version/tag
-validation, missing/unsafe manifest entries, repeatable packaging, checksums,
+validation, nested runtime folders, missing/unsafe/case-colliding manifest
+entries, symlinked directories, unlisted-file exclusion, repeatable packaging, checksums,
 changelog extraction, preserved release notes and safe asset collision/retry
 behavior. GitHub calls are mocked; these tests never upload anything. The GitHub
 Actions release workflow runs these plus both Lua suites before publishing assets.
@@ -93,10 +94,11 @@ It checks:
   events and update ticks, actionable `/arc check` feedback, working raid UI,
   minimap and ready-check response buttons.
 
-The `--stale-toc` run intentionally skips `ARC_PlayerCheck.lua` and
-`ARC_Session.lua` to model a MoP client still using the old file list. It
+The `--stale-toc` run intentionally skips localization, `UI/ARC_PlayerCheck.lua`
+and `Core/ARC_Session.lua` to model unavailable optional modules. It
 verifies defensive behavior, not
-that `/reload` can install new files. Updating to 1.5.0 needs a full restart.
+that `/reload` can install new files or discover moved paths. Updates that move
+files, including 1.10.1, require a full restart.
 
 Passing this suite validates control flow, not Blizzard's actual network
 behavior, private-server API differences or pixel-level rendering. Before

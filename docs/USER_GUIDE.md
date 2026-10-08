@@ -186,8 +186,8 @@ Name-only menus such as chat or friends can offer ARC Check only if the exact
 name/realm resolves to a current target, focus, mouseover or group unit. The
 WoW client cannot inspect an arbitrary name without a valid nearby player unit.
 
-If the game reports that `ARC_PlayerCheck.lua` is not loaded, fully restart the
-client, verify that the file is beside `ARC.toc` and reinstall the complete
+If the game reports that `UI/ARC_PlayerCheck.lua` is not loaded, fully restart the
+client, verify that the file is in `ARC/UI/` and reinstall the complete
 release. ARC keeps the raid window working and reports the unavailable module
 instead of repeatedly throwing errors.
 

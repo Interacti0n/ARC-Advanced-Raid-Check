@@ -21,9 +21,9 @@ class ReleaseTests(unittest.TestCase):
         self.root = Path(self.temp.name) / "source"
         self.root.mkdir()
         self.output = Path(self.temp.name) / "output"
-        self.write("ARC.toc", "## Version: 2.3.4\nARC_Core.lua\nARC_PlayerCheck.lua\nARC.lua\n")
-        self.write("ARC_Core.lua", 'ARC.VERSION = "2.3.4"\n')
-        self.write("ARC_PlayerCheck.lua", "-- detail\n")
+        self.write("ARC.toc", "## Version: 2.3.4\nCore/ARC_Core.lua\nUI/ARC_PlayerCheck.lua\nARC.lua\n")
+        self.write("Core/ARC_Core.lua", 'ARC.VERSION = "2.3.4"\n')
+        self.write("UI/ARC_PlayerCheck.lua", "-- detail\n")
         self.write("ARC.lua", "-- events\n")
         self.write("README.md", "Current version: **2.3.4**\n")
         self.write("changelog.txt", "v2.3.4 CHANGES\n  - Current change\n\nv2.3.3 CHANGES\n  - Old change\n")
@@ -43,7 +43,7 @@ class ReleaseTests(unittest.TestCase):
         archive = self.build()
         with zipfile.ZipFile(archive) as opened:
             self.assertEqual(set(opened.namelist()), {
-                "ARC/ARC.toc", "ARC/ARC_Core.lua", "ARC/ARC_PlayerCheck.lua",
+                "ARC/ARC.toc", "ARC/Core/ARC_Core.lua", "ARC/UI/ARC_PlayerCheck.lua",
                 "ARC/ARC.lua", "ARC/changelog.txt", "ARC/LICENSE",
             })
             self.assertIsNone(opened.testzip())
@@ -61,7 +61,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
 
     def test_core_readme_and_changelog_versions_are_checked(self):
-        for file in ("ARC_Core.lua", "README.md", "changelog.txt"):
+        for file in ("Core/ARC_Core.lua", "README.md", "changelog.txt"):
             original = (self.root / file).read_text()
             self.write(file, original.replace("2.3.4", "2.3.5"))
             with self.assertRaises(ValueError):
@@ -70,7 +70,10 @@ class ReleaseTests(unittest.TestCase):
 
     def test_missing_and_duplicate_or_traversing_modules_fail(self):
         original = (self.root / "ARC.toc").read_text()
-        for extra in ("ARC_Missing.lua", "ARC_Core.lua", "../evil.lua"):
+        for extra in ("Core/ARC_Missing.lua", "Core/ARC_Core.lua", "../evil.lua",
+                      "Core/../ARC.lua", "Core//ARC_Extra.lua", "Core\\ARC_Extra.lua",
+                      "docs/ARC_Secret.lua", "/Core/ARC_Extra.lua", "C:/Core/ARC_Extra.lua",
+                      "core/arc_core.lua", "UI/ARC_PlayerCheck.lua"):
             self.write("ARC.toc", original.replace("ARC.lua\n", extra + "\nARC.lua\n"))
             with self.assertRaises(ValueError):
                 self.build()
@@ -78,7 +81,9 @@ class ReleaseTests(unittest.TestCase):
     def test_same_sources_have_deterministic_bytes_and_normalized_newlines(self):
         first = self.build().read_bytes()
         self.assertEqual(first, self.build().read_bytes())
-        for path in self.root.iterdir():
+        for path in self.root.rglob("*"):
+            if not path.is_file():
+                continue
             path.write_bytes(path.read_bytes().replace(b"\r\n", b"\n").replace(b"\n", b"\r\n"))
         self.assertEqual(first, self.build().read_bytes())
 
@@ -89,7 +94,25 @@ class ReleaseTests(unittest.TestCase):
         with zipfile.ZipFile(archive) as opened:
             self.assertNotIn("ARC/README.md", opened.namelist())
             self.assertFalse(any("/docs/" in name or "/tests/" in name for name in opened.namelist()))
-            self.assertIn("Permission is hereby granted", opened.read("ARC/ARC_Gear.lua").decode("utf-8"))
+            self.assertIn("Permission is hereby granted", opened.read("ARC/Core/ARC_Gear.lua").decode("utf-8"))
+
+    def test_locale_directory_is_packaged_only_when_listed_in_toc(self):
+        toc = (self.root / "ARC.toc").read_text()
+        self.write("ARC.toc", toc.replace("UI/ARC_PlayerCheck.lua", "Locales/ARC_Locales_SK.lua\nUI/ARC_PlayerCheck.lua"))
+        self.write("Locales/ARC_Locales_SK.lua", "-- shipped translation\n")
+        self.write("Locales/ARC_Unused.lua", "-- unlisted, do not ship\n")
+        self.write("ARC_Core.lua", "-- obsolete root file, do not ship\n")
+        with zipfile.ZipFile(self.build()) as opened:
+            self.assertIn("ARC/Locales/ARC_Locales_SK.lua", opened.namelist())
+            self.assertNotIn("ARC/Locales/ARC_Unused.lua", opened.namelist())
+            self.assertNotIn("ARC/ARC_Core.lua", opened.namelist())
+
+    def test_symlinked_directory_is_rejected_before_reading_modules(self):
+        real_is_symlink = Path.is_symlink
+        core_dir = self.root / "Core"
+        with patch.object(Path, "is_symlink", lambda path: path == core_dir or real_is_symlink(path)):
+            with self.assertRaisesRegex(ValueError, "Unsafe package source"):
+                self.build()
 
     def run_publish(self, release):
         with patch.dict(os.environ, {"GH_REPO": "owner/repo"}), patch("publish_release.gh", return_value=json.dumps(release)) as api:

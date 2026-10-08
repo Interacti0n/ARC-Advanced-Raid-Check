@@ -1,4 +1,4 @@
-local ARC = assert(_G.ARC, "ARC_Core.lua must load before ARC_Gear.lua")
+local ARC = assert(_G.ARC, "Core/ARC_Core.lua must load before Core/ARC_Gear.lua")
 local I = assert(ARC.Internal, "ARC internal API is unavailable")
 local Round = I.Round
 
