@@ -224,6 +224,8 @@ for line in (tocText .. "\n"):gmatch("(.-)\n") do
     local file = line:match("^%s*(.-)%s*$")
     tocVersion = file:match("^## Version:%s*(.+)$") or tocVersion
     if file ~= "" and file:sub(1, 1) ~= "#" then
+        assert(not file:find("/", 1, true), "MoP TOC paths must use backslashes: " .. file)
+        file = file:gsub("\\", "/") -- Normalize only for the host's offline loader.
         assert(not seen[file], "Duplicate TOC entry: " .. file)
         files[#files + 1], seen[file] = file, true
     end

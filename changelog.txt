@@ -2,6 +2,8 @@ v1.10.1 CHANGES
   - Organized addon files into Core, UI and Locales folders without changing
     gameplay behavior, saved settings or communication identifiers.
   - Updated TOC loading, regression tests and GitHub Actions for the new paths.
+  - Fixed Windows MoP loading by using backslashes in TOC subfolder paths;
+    added regression checks so incompatible paths cannot pass packaging.
   - Kept minimal ZIP packages with the same runtime files, changelog and license;
     preserved path validation and excluded documentation, tests and tooling.
   - Fully restart WoW after this update; /reload may retain the old file paths.

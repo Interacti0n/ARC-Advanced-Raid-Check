@@ -21,7 +21,7 @@ class ReleaseTests(unittest.TestCase):
         self.root = Path(self.temp.name) / "source"
         self.root.mkdir()
         self.output = Path(self.temp.name) / "output"
-        self.write("ARC.toc", "## Version: 2.3.4\nCore/ARC_Core.lua\nUI/ARC_PlayerCheck.lua\nARC.lua\n")
+        self.write("ARC.toc", "## Version: 2.3.4\nCore\\ARC_Core.lua\nUI\\ARC_PlayerCheck.lua\nARC.lua\n")
         self.write("Core/ARC_Core.lua", 'ARC.VERSION = "2.3.4"\n')
         self.write("UI/ARC_PlayerCheck.lua", "-- detail\n")
         self.write("ARC.lua", "-- events\n")
@@ -70,10 +70,10 @@ class ReleaseTests(unittest.TestCase):
 
     def test_missing_and_duplicate_or_traversing_modules_fail(self):
         original = (self.root / "ARC.toc").read_text()
-        for extra in ("Core/ARC_Missing.lua", "Core/ARC_Core.lua", "../evil.lua",
-                      "Core/../ARC.lua", "Core//ARC_Extra.lua", "Core\\ARC_Extra.lua",
-                      "docs/ARC_Secret.lua", "/Core/ARC_Extra.lua", "C:/Core/ARC_Extra.lua",
-                      "core/arc_core.lua", "UI/ARC_PlayerCheck.lua"):
+        for extra in ("Core\\ARC_Missing.lua", "Core\\ARC_Core.lua", "..\\evil.lua",
+                      "Core\\..\\ARC.lua", "Core\\\\ARC_Extra.lua", "Core/ARC_Extra.lua",
+                      "docs\\ARC_Secret.lua", "\\Core\\ARC_Extra.lua", "C:\\Core\\ARC_Extra.lua",
+                      "Core\\ARC_CORE.lua", "UI\\ARC_PlayerCheck.lua"):
             self.write("ARC.toc", original.replace("ARC.lua\n", extra + "\nARC.lua\n"))
             with self.assertRaises(ValueError):
                 self.build()
@@ -98,7 +98,7 @@ class ReleaseTests(unittest.TestCase):
 
     def test_locale_directory_is_packaged_only_when_listed_in_toc(self):
         toc = (self.root / "ARC.toc").read_text()
-        self.write("ARC.toc", toc.replace("UI/ARC_PlayerCheck.lua", "Locales/ARC_Locales_SK.lua\nUI/ARC_PlayerCheck.lua"))
+        self.write("ARC.toc", toc.replace("UI\\ARC_PlayerCheck.lua", "Locales\\ARC_Locales_SK.lua\nUI\\ARC_PlayerCheck.lua"))
         self.write("Locales/ARC_Locales_SK.lua", "-- shipped translation\n")
         self.write("Locales/ARC_Unused.lua", "-- unlisted, do not ship\n")
         self.write("ARC_Core.lua", "-- obsolete root file, do not ship\n")
@@ -113,6 +113,16 @@ class ReleaseTests(unittest.TestCase):
         with patch.object(Path, "is_symlink", lambda path: path == core_dir or real_is_symlink(path)):
             with self.assertRaisesRegex(ValueError, "Unsafe package source"):
                 self.build()
+
+    def test_mop_toc_requires_backslashes_but_zip_paths_use_forward_slashes(self):
+        original = (self.root / "ARC.toc").read_text()
+        with zipfile.ZipFile(self.build()) as opened:
+            self.assertEqual(opened.read("ARC/ARC.toc").decode("utf-8"), original)
+            self.assertTrue(all("\\" not in name for name in opened.namelist()))
+            self.assertIn("ARC/Core/ARC_Core.lua", opened.namelist())
+        self.write("ARC.toc", original.replace("\\", "/"))
+        with self.assertRaisesRegex(ValueError, "MoP TOC paths must use backslashes"):
+            self.build()
 
     def run_publish(self, release):
         with patch.dict(os.environ, {"GH_REPO": "owner/repo"}), patch("publish_release.gh", return_value=json.dumps(release)) as api:

@@ -101,7 +101,10 @@ that `/reload` can install new files or discover moved paths. Updates that move
 files, including 1.10.1, require a full restart.
 
 Passing this suite validates control flow, not Blizzard's actual network
-behavior, private-server API differences or pixel-level rendering. Before
+behavior. TOC checks explicitly reject forward-slash subfolder paths that the
+Windows 5.4.8 loader refused; the offline harness normalizes backslashes only
+after that check, and packaging tests verify the original TOC remains intact.
+The suite does not validate private-server API differences or pixel-level rendering. Before
 release, test the button placement, scrollable/wrapped text, refresh and
 target changes inside the MoP client, both with and without ElvUI. Also verify
 right-click menus on target/focus, party/raid frames and ARC rows; open a menu,

@@ -85,6 +85,17 @@ the test harness, and all 11 release-tooling tests. The candidate ZIP contains
 ran through Fengari locally; native Lua 5.1 remains the Actions check. This is
 not a published release or an in-game verification of the moved file paths.
 
+The first live 1.10.1 attempt exposed a Windows 5.4.8 loader difference:
+`FrameXML.log` reported an error for every forward-slash subfolder path. The
+TOC now uses backslashes. Offline loaders normalize them only after checking
+the client-compatible format; release tooling retains those backslashes in
+the shipped TOC while using standard forward-slash ZIP entries. Recheck the
+live client after a full restart; the previous local preflight did not prove
+that the game's loader accepted those paths.
+After the path correction, all 162 mocked regression tests, optional-module
+checks, Lua syntax loading and 12 release-tooling tests passed locally. The
+rebuilt candidate ZIP preserves the corrected TOC and still has 14 files.
+
 ## Previous 1.10.0 local preflight — 2026-10-08
 
 - 162 mocked ARC regression tests passed, including join/activity/revival

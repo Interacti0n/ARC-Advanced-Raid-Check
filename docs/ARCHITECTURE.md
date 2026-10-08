@@ -27,7 +27,10 @@ last. When adding a module, update the TOC and require a full client restart
 during testing because the MoP client may cache the previous file list.
 
 Runtime files are grouped into `Core/`, `UI/` and `Locales/`; only the TOC and
-event/command entry point stay at the root. Existing filenames, namespaces and
+event/command entry point stay at the root. The Windows 5.4.8 TOC must use
+backslashes (`Core\ARC_Core.lua`); offline tooling normalizes paths to forward
+slashes for host file loading and ZIP entries, without rewriting the TOC.
+Existing filenames, namespaces and
 load order are preserved. `ARC_Session.lua` still owns its report UI as well as
 tracking; this directory-only reorganization does not split or rewrite modules.
 `docs/`, `tests/`, `scripts/` and `.github/` are repository-only support folders.

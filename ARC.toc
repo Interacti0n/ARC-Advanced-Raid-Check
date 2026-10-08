@@ -8,14 +8,14 @@
 ## OptionalDeps: ElvUI
 ## DefaultState: enabled
 
-Core/ARC_Core.lua
-Locales/ARC_Localization.lua
-Locales/ARC_Locales_SK.lua
-Locales/ARC_Locales_CZ.lua
-Core/ARC_Gear.lua
-Core/ARC_Inspect.lua
-Core/ARC_Session.lua
-UI/ARC_UI.lua
-UI/ARC_PlayerCheck.lua
-UI/ARC_Options.lua
+Core\ARC_Core.lua
+Locales\ARC_Localization.lua
+Locales\ARC_Locales_SK.lua
+Locales\ARC_Locales_CZ.lua
+Core\ARC_Gear.lua
+Core\ARC_Inspect.lua
+Core\ARC_Session.lua
+UI\ARC_UI.lua
+UI\ARC_PlayerCheck.lua
+UI\ARC_Options.lua
 ARC.lua

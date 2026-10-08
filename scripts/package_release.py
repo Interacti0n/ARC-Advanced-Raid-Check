@@ -22,7 +22,12 @@ def manifest(root, tag=""):
     version = match[1]
     if tag and tag != "v" + version:
         raise ValueError(f"Release tag {tag!r} must equal v{version}; update sources before tagging")
-    modules = [line.strip() for line in toc.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    toc_modules = [line.strip() for line in toc.splitlines() if line.strip() and not line.lstrip().startswith("#")]
+    # The Windows MoP 5.4.8 loader rejects forward-slash subfolder paths.
+    # Normalize only for filesystem/ZIP paths, never the shipped TOC contents.
+    if any("/" in name for name in toc_modules):
+        raise ValueError("MoP TOC paths must use backslashes, not forward slashes")
+    modules = [name.replace("\\", "/") for name in toc_modules]
     # Accept only the runtime layout, never arbitrary/traversing TOC paths.
     module_path = r"(?:ARC\.lua|(?:Core|UI|Locales)/ARC(?:_[A-Za-z]+)+\.lua)"
     if len(modules) != len({name.casefold() for name in modules}) or any(not re.fullmatch(module_path, name) for name in modules):
